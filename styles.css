@@ -1,0 +1,37 @@
+/* filename: styles.css */
+:root {
+    --neon-green: #39ff14;
+    --neon-red: #ff073a;
+    --neon-blue: #00f3ff;
+    --dark-bg: #111111;
+}
+
+body {
+    font-family: 'Inter', sans-serif;
+    background-color: var(--dark-bg);
+    color: white;
+    overflow-x: hidden;
+}
+
+.font-racing { font-family: 'Racing Sans One', cursive; }
+.font-mono { font-family: 'Roboto Mono', monospace; }
+
+/* Podium Animations */
+@keyframes slideUp {
+    from { transform: translateY(100%); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+.podium-bar { animation: slideUp 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+
+.glass-panel {
+    background: rgba(26, 26, 26, 0.95);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Scrollbar for lap history */
+.lap-history::-webkit-scrollbar { width: 4px; }
+.lap-history::-webkit-scrollbar-thumb { background: #444; border-radius: 2px; }
+
+.animate-fade-in { animation: fadeIn 0.3s ease-in-out; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
