@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SpeedTrack - Realtime Racing Telemetry</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Fonts & Icons -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Racing+Sans+One&family=Roboto+Mono:wght@400;700&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --neon-green: #39ff14;
+            --neon-red: #ff073a;
+            --dark-bg: #111111;
+            --panel-bg: #1a1a1a;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--dark-bg);
+            color: white;
+            overflow-x: hidden;
+        }
+
+        .font-racing {
+            font-family: 'Racing Sans One', cursive;
+        }
+
+        .font-mono {
+            font-family: 'Roboto Mono', monospace;
+        }
+
+        /* Podium Animations */
+        @keyframes slideUp {
+            from { transform: translateY(100%); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+
+        .podium-bar {
+            animation: slideUp 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #111;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #333;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+
+        .glass-panel {
+            background: rgba(26, 26, 26, 0.95);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+    <!-- Header -->
+    <header class="bg-black border-b border-gray-800 p-4 sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto flex justify-between items-center">
+            <div class="flex items-center gap-3">
+                <i class="fa-solid fa-flag-checkered text-3xl text-[var(--neon-green)]"></i>
+                <h1 class="text-2xl font-racing tracking-wider uppercase bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-500">
+                    Project<span class="text-[var(--neon-green)]">Racer</span>
+                </h1>
+            </div>
+            <button id="authBtn" class="px-4 py-2 rounded bg-gray-800 hover:bg-gray-700 transition text-sm font-semibold border border-gray-700">
+                <i class="fa-solid fa-lock mr-2"></i>Admin Access
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-grow p-4 md:p-6 max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-1 gap-8">
+        
+        <!-- View Switcher (Visible only when Admin) -->
+        <div id="adminControls" class="hidden w-full bg-yellow-900/20 border border-yellow-600/50 p-4 rounded-xl flex flex-col sm:flex-row justify-between items-center gap-4 mb-4">
+            <div class="flex items-center gap-3 text-yellow-500">
+                <i class="fa-solid fa-user-shield text-xl"></i>
+                <span class="font-bold">Admin Mode Active</span>
+            </div>
+            <div class="flex gap-2">
+                <button onclick="switchView('live')" class="px-4 py-2 rounded bg-black/50 hover:bg-black/70 border border-gray-600 transition">Live View</button>
+                <button onclick="switchView('manage')" class="px-4 py-2 rounded bg-yellow-600 hover:bg-yellow-500 text-black font-bold transition">Manage Data</button>
+            </div>
+        </div>
+
+        <!-- LIVE VIEW SECTION -->
+        <div id="liveView" class="space-y-8 animate-fade-in">
+            
+            <!-- Podium Section -->
+            <div class="relative h-80 w-full flex justify-center items-end gap-2 md:gap-4 pb-4 border-b border-gray-800" id="podiumContainer">
+                <!-- Javascript fills this -->
+                <div class="text-gray-500 text-center w-full flex flex-col items-center justify-center h-full">
+                    <i class="fa-solid fa-stopwatch text-4xl mb-2 opacity-50"></i>
+                    <p>Waiting for race data...</p>
+                </div>
+            </div>
+
+            <!-- Leaderboard Table -->
+            <div class="glass-panel rounded-xl overflow-hidden shadow-2xl">
+                <div class="p-4 bg-gray-900/50 border-b border-gray-800 flex justify-between items-center">
+                    <h2 class="text-lg font-bold flex items-center gap-2">
+                        <i class="fa-solid fa-list-ol text-blue-500"></i> Live Standings
+                    </h2>
+                    <span class="text-xs text-gray-500 uppercase tracking-widest" id="lastUpdated">Updated: Just now</span>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="text-gray-400 text-sm uppercase tracking-wider border-b border-gray-800">
+                                <th class="p-4 w-16 text-center">Pos</th>
+                                <th class="p-4 w-20">#</th>
+                                <th class="p-4">Driver</th>
+                                <th class="p-4 text-right">Best Lap</th>
+                                <th class="p-4 text-right">Gap</th>
+                                <th class="p-4 text-center">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="leaderboardBody" class="text-sm font-medium">
+                            <!-- Rows generated by JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ADMIN MANAGE SECTION -->
+        <div id="manageView" class="hidden space-y-6">
+            
+            <!-- Add New Racer -->
+            <div class="glass-panel p-6 rounded-xl">
+                <h3 class="text-lg font-bold mb-4 flex items-center gap-2">
+                    <i class="fa-solid fa-plus-circle text-[var(--neon-green)]"></i> Register New Driver
+                </h3>
+                <form id="addRacerForm" class="flex flex-col md:flex-row gap-4">
+                    <input type="text" id="racerName" placeholder="Driver Name" class="bg-black/50 border border-gray-700 rounded p-3 text-white focus:border-blue-500 outline-none flex-grow" required>
+                    <input type="text" id="carNumber" placeholder="Car #" class="bg-black/50 border border-gray-700 rounded p-3 text-white focus:border-blue-500 outline-none w-full md:w-32" required>
+                    <button type="submit" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-6 rounded transition flex items-center justify-center gap-2">
+                        <span>Add</span>
+                    </button>
+                </form>
+            </div>
+
+            <!-- Manage Active Racers -->
+            <div class="glass-panel p-6 rounded-xl">
+                <h3 class="text-lg font-bold mb-4 flex items-center gap-2">
+                    <i class="fa-solid fa-stopwatch text-yellow-500"></i> Track Control
+                </h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="adminRacerList">
+                    <!-- Admin Cards generated JS -->
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Admin Login Modal -->
+    <div id="loginModal" class="fixed inset-0 bg-black/90 z-[60] hidden flex items-center justify-center p-4">
+        <div class="glass-panel max-w-md w-full p-8 rounded-2xl border border-gray-700 shadow-2xl">
+            <h2 class="text-2xl font-bold mb-2">Admin Access</h2>
+            <p class="text-gray-400 mb-6 text-sm">Enter the access PIN to manage race data.</p>
+            <form id="pinForm" class="space-y-4">
+                <input type="password" id="pinInput" placeholder="Enter PIN (Hint: 1234)" class="w-full bg-black border border-gray-700 rounded-lg p-4 text-center text-2xl tracking-[0.5em] focus:border-[var(--neon-green)] outline-none transition">
+                <div class="flex gap-3">
+                    <button type="button" onclick="closeModal()" class="flex-1 py-3 rounded-lg bg-gray-800 hover:bg-gray-700 font-semibold transition">Cancel</button>
+                    <button type="submit" class="flex-1 py-3 rounded-lg bg-[var(--neon-green)] text-black hover:bg-[#2ecc71] font-bold transition">Unlock</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="fixed bottom-6 right-6 bg-gray-800 text-white px-6 py-3 rounded-lg shadow-xl border border-gray-700 transform translate-y-20 opacity-0 transition-all duration-300 z-50 flex items-center gap-3">
+        <i class="fa-solid fa-info-circle text-blue-400"></i>
+        <span id="toastMsg">Notification</span>
+    </div>
+
+    <!-- Firebase Logic -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- Configuration ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyDAcC-tFMZPUpbXNEbPgEmm5zbFqwZgbJs",
+            authDomain: "projectracer-4b315.firebaseapp.com",
+            projectId: "projectracer-4b315",
+            storageBucket: "projectracer-4b315.firebasestorage.app",
+            messagingSenderId: "1010090408562",
+            appId: "1:1010090408562:web:482a841c4823c114a4a0eb",
+            measurementId: "G-9HHRZJCBM5"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        
+        // Use a consistent App ID for data separation
+        const APP_ID = "race-tracker-v1"; 
+
+        // State
+        let currentUser = null;
+        let isAdmin = false;
+        let racersData = [];
+
+        // --- DOM Elements ---
+        const loginModal = document.getElementById('loginModal');
+        const adminControls = document.getElementById('adminControls');
+        const liveView = document.getElementById('liveView');
+        const manageView = document.getElementById('manageView');
+        const leaderboardBody = document.getElementById('leaderboardBody');
+        const podiumContainer = document.getElementById('podiumContainer');
+        const adminRacerList = document.getElementById('adminRacerList');
+
+        // --- Auth & Setup ---
+        async function init() {
+            try {
+                // We use anonymous auth for everyone to access DB
+                await signInAnonymously(auth);
+            } catch (error) {
+                console.error("Auth failed", error);
+                showToast("Connection failed. Check console.", true);
+            }
+        }
+
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                currentUser = user;
+                setupRealtimeListener();
+            }
+        });
+
+        // --- Firestore Realtime Listener ---
+        function setupRealtimeListener() {
+            const racersRef = collection(db, 'artifacts', APP_ID, 'public', 'data', 'racers');
+            
+            // Note: We don't use orderBy here to comply with constraints. Sorting happens in memory.
+            onSnapshot(racersRef, (snapshot) => {
+                const racers = [];
+                snapshot.forEach(doc => {
+                    racers.push({ id: doc.id, ...doc.data() });
+                });
+                
+                // Sort: Valid times first (ascending), then nulls
+                racersData = racers.sort((a, b) => {
+                    if (a.bestLap === null) return 1;
+                    if (b.bestLap === null) return -1;
+                    return a.bestLap - b.bestLap;
+                });
+
+                renderLeaderboard();
+                renderPodium();
+                renderAdminList();
+                
+                const now = new Date();
+                document.getElementById('lastUpdated').innerText = `Updated: ${now.toLocaleTimeString()}`;
+            }, (error) => {
+                console.error("Data fetch error:", error);
+                showToast("Error syncing live data", true);
+            });
+        }
+
+        // --- UI Rendering ---
+
+        function formatTime(ms) {
+            if (!ms && ms !== 0) return "--:--.--";
+            const min = Math.floor(ms / 60000);
+            const sec = Math.floor((ms % 60000) / 1000);
+            const mill = Math.floor((ms % 1000) / 10);
+            return `${min}:${sec.toString().padStart(2, '0')}.${mill.toString().padStart(2, '0')}`;
+        }
+
+        function renderLeaderboard() {
+            leaderboardBody.innerHTML = '';
+            
+            if (racersData.length === 0) {
+                leaderboardBody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-gray-500">No racers registered yet.</td></tr>`;
+                return;
+            }
+
+            const bestTime = racersData[0]?.bestLap || 0;
+
+            racersData.forEach((racer, index) => {
+                const tr = document.createElement('tr');
+                tr.className = "border-b border-gray-800 hover:bg-white/5 transition";
+                
+                // Gap Calculation
+                let gap = "-";
+                if (index > 0 && racer.bestLap && bestTime) {
+                    gap = "+" + ((racer.bestLap - bestTime) / 1000).toFixed(2) + "s";
+                }
+
+                // Rank Styling
+                let rankDisplay = `<span class="font-mono text-gray-400">P${index + 1}</span>`;
+                if (index === 0 && racer.bestLap) rankDisplay = `<span class="bg-[var(--neon-green)] text-black font-bold px-2 py-0.5 rounded text-xs">P1</span>`;
+                if (index === 1 && racer.bestLap) rankDisplay = `<span class="bg-gray-300 text-black font-bold px-2 py-0.5 rounded text-xs">P2</span>`;
+                if (index === 2 && racer.bestLap) rankDisplay = `<span class="bg-orange-600 text-white font-bold px-2 py-0.5 rounded text-xs">P3</span>`;
+
+                tr.innerHTML = `
+                    <td class="p-4 text-center">${rankDisplay}</td>
+                    <td class="p-4 font-mono text-gray-400">#${racer.number}</td>
+                    <td class="p-4 font-bold text-white">${racer.name}</td>
+                    <td class="p-4 text-right font-mono text-[var(--neon-green)]">${formatTime(racer.bestLap)}</td>
+                    <td class="p-4 text-right font-mono text-gray-500 text-xs">${gap}</td>
+                    <td class="p-4 text-center">
+                        <span class="inline-block w-2 h-2 rounded-full ${racer.status === 'pitting' ? 'bg-red-500' : 'bg-green-500'} animate-pulse"></span>
+                    </td>
+                `;
+                leaderboardBody.appendChild(tr);
+            });
+        }
+
+        function renderPodium() {
+            podiumContainer.innerHTML = '';
+            
+            const winners = racersData.filter(r => r.bestLap).slice(0, 3);
+            
+            if (winners.length === 0) {
+                podiumContainer.innerHTML = `
+                <div class="text-gray-500 text-center w-full flex flex-col items-center justify-center h-full">
+                    <i class="fa-solid fa-flag-checkered text-4xl mb-2 opacity-50"></i>
+                    <p>Track is Clear</p>
+                </div>`;
+                return;
+            }
+
+            // Order for podium visual: 2nd, 1st, 3rd
+            const visualOrder = [1, 0, 2];
+            
+            visualOrder.forEach(placeIndex => {
+                if (winners[placeIndex]) {
+                    const racer = winners[placeIndex];
+                    const realRank = placeIndex + 1;
+                    
+                    // Heights: 1st=100%, 2nd=75%, 3rd=60%
+                    let height = 'h-48';
+                    let color = 'bg-yellow-500';
+                    let orderClass = 'order-2'; // Center (1st)
+                    let scale = 'scale-110 z-10';
+                    
+                    if (realRank === 2) {
+                        height = 'h-32';
+                        color = 'bg-gray-400';
+                        orderClass = 'order-1';
+                        scale = 'scale-100 mt-8';
+                    } else if (realRank === 3) {
+                        height = 'h-24';
+                        color = 'bg-orange-700';
+                        orderClass = 'order-3';
+                        scale = 'scale-90 mt-16';
+                    } else {
+                        // 1st place specific
+                         color = 'bg-[var(--neon-green)]';
+                    }
+
+                    const bar = document.createElement('div');
+                    bar.className = `${orderClass} flex flex-col items-center justify-end w-1/3 max-w-[120px] podium-bar ${scale}`;
+                    
+                    bar.innerHTML = `
+                        <div class="mb-2 text-center">
+                            <div class="text-xs text-gray-400 font-mono mb-1">#${racer.number}</div>
+                            <div class="font-bold truncate w-24 text-center text-sm md:text-base">${racer.name}</div>
+                            <div class="font-mono text-xs text-[var(--neon-green)]">${formatTime(racer.bestLap)}</div>
+                        </div>
+                        <div class="w-full ${height} ${color} rounded-t-lg shadow-lg relative flex items-start justify-center pt-2">
+                            <span class="text-black font-black text-2xl opacity-50">${realRank}</span>
+                        </div>
+                    `;
+                    podiumContainer.appendChild(bar);
+                }
+            });
+        }
+
+        function renderAdminList() {
+            // Only render if we are in admin mode, though the data is always available
+            if (!isAdmin) return;
+
+            adminRacerList.innerHTML = '';
+            
+            // Sort by car number for easier admin finding
+            const sortedByNum = [...racersData].sort((a,b) => String(a.number).localeCompare(String(b.number)));
+
+            sortedByNum.forEach(racer => {
+                const div = document.createElement('div');
+                div.className = "bg-black/40 border border-gray-700 p-4 rounded-lg flex flex-col gap-3";
+                
+                div.innerHTML = `
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <span class="text-gray-400 text-xs font-mono">#${racer.number}</span>
+                            <div class="font-bold text-lg">${racer.name}</div>
+                        </div>
+                        <button onclick="window.deleteRacer('${racer.id}')" class="text-red-500 hover:text-red-400 px-2">
+                            <i class="fa-solid fa-trash"></i>
+                        </button>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-2 mt-2">
+                        <div>
+                            <label class="text-xs text-gray-500 block mb-1">New Lap (sec)</label>
+                            <input type="number" step="0.01" id="time-${racer.id}" placeholder="e.g. 82.5" 
+                                class="w-full bg-black border border-gray-600 rounded p-2 text-white text-sm font-mono focus:border-[var(--neon-green)] outline-none">
+                        </div>
+                        <div class="flex items-end">
+                            <button onclick="window.updateTime('${racer.id}')" class="w-full bg-gray-700 hover:bg-gray-600 text-white p-2 rounded text-sm font-bold transition">
+                                Update
+                            </button>
+                        </div>
+                    </div>
+                    <div class="text-xs text-gray-500 text-right mt-1">Current Best: ${formatTime(racer.bestLap)}</div>
+                `;
+                adminRacerList.appendChild(div);
+            });
+        }
+
+        // --- Admin Actions ---
+
+        window.addRacer = async (e) => {
+            e.preventDefault();
+            if (!isAdmin) return;
+
+            const name = document.getElementById('racerName').value;
+            const number = document.getElementById('carNumber').value;
+            
+            try {
+                const racersRef = collection(db, 'artifacts', APP_ID, 'public', 'data', 'racers');
+                await addDoc(racersRef, {
+                    name,
+                    number,
+                    bestLap: null,
+                    status: 'racing',
+                    createdAt: Date.now()
+                });
+                document.getElementById('addRacerForm').reset();
+                showToast(`Added driver ${name}`);
+            } catch (err) {
+                console.error(err);
+                showToast("Error adding driver", true);
+            }
+        };
+
+        window.updateTime = async (id) => {
+            if (!isAdmin) return;
+            const timeInput = document.getElementById(`time-${id}`);
+            const seconds = parseFloat(timeInput.value);
+
+            if (isNaN(seconds) || seconds <= 0) {
+                showToast("Invalid time", true);
+                return;
+            }
+
+            const ms = Math.floor(seconds * 1000);
+            
+            try {
+                // Get current best to compare
+                const racer = racersData.find(r => r.id === id);
+                let newBest = racer.bestLap;
+                
+                // Logic: If no previous time, or new time is faster (lower), update best
+                if (!newBest || ms < newBest) {
+                    newBest = ms;
+                }
+
+                const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'racers', id);
+                await updateDoc(docRef, {
+                    bestLap: newBest,
+                    lastLap: ms
+                });
+                
+                timeInput.value = '';
+                showToast(`Time updated for #${racer.number}`);
+            } catch (err) {
+                console.error(err);
+                showToast("Update failed", true);
+            }
+        };
+
+        window.deleteRacer = async (id) => {
+            if (!isAdmin) return;
+            if(!confirm("Remove this racer?")) return;
+            
+            try {
+                await deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'racers', id));
+                showToast("Racer removed");
+            } catch (err) {
+                console.error(err);
+                showToast("Error removing racer", true);
+            }
+        };
+
+        // --- View Management ---
+
+        window.switchView = (viewName) => {
+            if (viewName === 'manage') {
+                liveView.classList.add('hidden');
+                manageView.classList.remove('hidden');
+                renderAdminList(); // Ensure list is fresh
+            } else {
+                manageView.classList.add('hidden');
+                liveView.classList.remove('hidden');
+            }
+        };
+
+        // --- Interaction Handlers ---
+
+        document.getElementById('authBtn').addEventListener('click', () => {
+            if (isAdmin) {
+                // Logout logic
+                isAdmin = false;
+                adminControls.classList.add('hidden');
+                document.getElementById('authBtn').innerHTML = `<i class="fa-solid fa-lock mr-2"></i>Admin Access`;
+                switchView('live');
+                showToast("Admin mode disabled");
+            } else {
+                loginModal.classList.remove('hidden');
+                document.getElementById('pinInput').focus();
+            }
+        });
+
+        window.closeModal = () => {
+            loginModal.classList.add('hidden');
+            document.getElementById('pinInput').value = '';
+        };
+
+        document.getElementById('pinForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const pin = document.getElementById('pinInput').value;
+            
+            if (pin === "1234") { // Simple client-side check
+                isAdmin = true;
+                adminControls.classList.remove('hidden');
+                document.getElementById('authBtn').innerHTML = `<i class="fa-solid fa-unlock mr-2"></i>Exit Admin`;
+                closeModal();
+                showToast("Admin mode unlocked");
+                renderAdminList();
+            } else {
+                showToast("Incorrect PIN", true);
+                document.getElementById('pinInput').value = '';
+            }
+        });
+
+        document.getElementById('addRacerForm').addEventListener('submit', window.addRacer);
+
+        function showToast(msg, isError = false) {
+            const toast = document.getElementById('toast');
+            document.getElementById('toastMsg').innerText = msg;
+            
+            if (isError) {
+                toast.classList.replace('border-gray-700', 'border-red-500');
+                toast.querySelector('i').classList.replace('text-blue-400', 'text-red-400');
+            } else {
+                toast.classList.replace('border-red-500', 'border-gray-700');
+                toast.querySelector('i').classList.replace('text-red-400', 'text-blue-400');
+            }
+
+            toast.classList.remove('translate-y-20', 'opacity-0');
+            
+            setTimeout(() => {
+                toast.classList.add('translate-y-20', 'opacity-0');
+            }, 3000);
+        }
+
+        // Start
+        init();
+
+    </script>
+</body>
+</html>
