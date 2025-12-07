@@ -48,6 +48,9 @@
         /* Scrollbar for lap history */
         .lap-history::-webkit-scrollbar { width: 4px; }
         .lap-history::-webkit-scrollbar-thumb { background: #444; border-radius: 2px; }
+        
+        .animate-fade-in { animation: fadeIn 0.3s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
     </style>
 </head>
 <body class="min-h-screen flex flex-col">
@@ -129,7 +132,7 @@
         </div>
 
         <!-- ADMIN MANAGE SECTION -->
-        <div id="manageView" class="hidden space-y-6">
+        <div id="manageView" class="hidden space-y-6 animate-fade-in">
             
             <!-- Race Configuration -->
             <div class="glass-panel p-6 rounded-xl border-l-4 border-[var(--neon-blue)]">
@@ -177,6 +180,68 @@
                 </div>
             </div>
         </div>
+
+        <!-- DRIVER DETAIL SECTION (Hidden by default) -->
+        <div id="driverDetailView" class="hidden space-y-6 animate-fade-in">
+            <div class="flex items-center gap-4 mb-4">
+                <button onclick="closeDriverDetails()" class="bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded flex items-center gap-2 transition">
+                    <i class="fa-solid fa-arrow-left"></i> Back
+                </button>
+                <h2 class="text-xl font-bold uppercase tracking-wider">Driver Management</h2>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- Left: Edit Profile -->
+                <div class="glass-panel p-6 rounded-xl h-fit">
+                    <h3 class="text-lg font-bold mb-6 text-[var(--neon-blue)] border-b border-gray-800 pb-2">Profile</h3>
+                    <form id="editDriverForm" class="space-y-4">
+                        <input type="hidden" id="editDriverId">
+                        <div>
+                            <label class="text-xs text-gray-400 font-mono block mb-1">Driver Name</label>
+                            <input type="text" id="editDriverName" class="w-full bg-black/50 border border-gray-700 rounded p-3 text-white focus:border-[var(--neon-blue)] outline-none">
+                        </div>
+                        <div>
+                            <label class="text-xs text-gray-400 font-mono block mb-1">Car Number</label>
+                            <input type="text" id="editDriverNumber" class="w-full bg-black/50 border border-gray-700 rounded p-3 text-white focus:border-[var(--neon-blue)] outline-none">
+                        </div>
+                        <div class="pt-4 flex flex-col gap-3">
+                            <button type="submit" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded transition uppercase text-sm">
+                                Save Changes
+                            </button>
+                            <button type="button" onclick="deleteCurrentDriver()" class="w-full bg-red-900/30 border border-red-800 hover:bg-red-900/50 text-red-500 font-bold py-3 rounded transition uppercase text-xs">
+                                <i class="fa-solid fa-trash mr-2"></i>Delete Driver
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Right: Lap History -->
+                <div class="glass-panel p-6 rounded-xl lg:col-span-2">
+                    <h3 class="text-lg font-bold mb-4 text-[var(--neon-green)] border-b border-gray-800 pb-2 flex justify-between">
+                        <span>Lap History</span>
+                        <span id="detailTotalLaps" class="text-white text-sm font-mono bg-gray-800 px-2 rounded">0 Laps</span>
+                    </h3>
+                    
+                    <div class="overflow-hidden rounded-lg border border-gray-800">
+                        <div class="max-h-[500px] overflow-y-auto">
+                            <table class="w-full text-left border-collapse">
+                                <thead class="bg-gray-900 sticky top-0 z-10">
+                                    <tr class="text-gray-500 text-xs font-mono uppercase">
+                                        <th class="p-3 w-20">Lap #</th>
+                                        <th class="p-3">Time</th>
+                                        <th class="p-3 text-right">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="detailLapList" class="divide-y divide-gray-800">
+                                    <!-- Laps injected here -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
     </main>
 
     <!-- Login Modal -->
@@ -227,6 +292,7 @@
         let isAdmin = false;
         let racersData = [];
         let raceConfig = { name: "Grand Prix", totalLaps: 0 };
+        let currentEditingRacerId = null;
 
         // --- DOM Cache ---
         const els = {
@@ -234,6 +300,7 @@
             adminControls: document.getElementById('adminControls'),
             liveView: document.getElementById('liveView'),
             manageView: document.getElementById('manageView'),
+            driverDetailView: document.getElementById('driverDetailView'),
             leaderboardBody: document.getElementById('leaderboardBody'),
             podiumContainer: document.getElementById('podiumContainer'),
             adminRacerList: document.getElementById('adminRacerList'),
@@ -241,7 +308,13 @@
             raceStats: document.getElementById('displayRaceStats'),
             configName: document.getElementById('configRaceName'),
             configLaps: document.getElementById('configTotalLaps'),
-            toast: document.getElementById('toast')
+            toast: document.getElementById('toast'),
+            // Edit View Els
+            editId: document.getElementById('editDriverId'),
+            editName: document.getElementById('editDriverName'),
+            editNumber: document.getElementById('editDriverNumber'),
+            detailLapList: document.getElementById('detailLapList'),
+            detailTotalLaps: document.getElementById('detailTotalLaps')
         };
 
         // --- Initialization ---
@@ -258,7 +331,6 @@
 
         // --- Data Logic ---
         function setupListeners() {
-            // 1. Race Config Listener
             const configRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'config', 'main');
             onSnapshot(configRef, (doc) => {
                 if (doc.exists()) {
@@ -271,13 +343,11 @@
                 }
             });
 
-            // 2. Racers Listener
             const racersRef = collection(db, 'artifacts', APP_ID, 'public', 'data', 'racers');
             onSnapshot(racersRef, (snapshot) => {
                 const racers = [];
                 snapshot.forEach(doc => racers.push({ id: doc.id, ...doc.data() }));
                 
-                // Sort by Best Lap (Ascending), handling nulls
                 racersData = racers.sort((a, b) => {
                     if (!a.bestLap) return 1;
                     if (!b.bestLap) return -1;
@@ -286,6 +356,11 @@
 
                 renderLiveView();
                 renderAdminList();
+                
+                // If currently editing a racer, refresh their detail view too
+                if (currentEditingRacerId) {
+                    renderDriverDetail(currentEditingRacerId);
+                }
             });
         }
 
@@ -310,7 +385,6 @@
         }
 
         function renderLiveView() {
-            // 1. Leaderboard
             els.leaderboardBody.innerHTML = '';
             const bestTime = racersData[0]?.bestLap || 0;
 
@@ -322,13 +396,11 @@
                 const tr = document.createElement('tr');
                 tr.className = "hover:bg-white/5 transition group";
                 
-                // Gap Calculation
                 let gap = `<span class="text-gray-600">-</span>`;
                 if (index > 0 && racer.bestLap && bestTime) {
                     gap = `<span class="text-[var(--neon-red)] font-mono text-xs">+${((racer.bestLap - bestTime) / 1000).toFixed(2)}s</span>`;
                 }
 
-                // Rank Badge
                 let rank = `<span class="font-mono text-gray-500">P${index + 1}</span>`;
                 if (index === 0 && racer.bestLap) rank = `<span class="bg-[var(--neon-green)] text-black font-bold px-2 rounded text-xs">P1</span>`;
                 
@@ -347,7 +419,6 @@
                 els.leaderboardBody.appendChild(tr);
             });
 
-            // 2. Podium
             els.podiumContainer.innerHTML = '';
             const winners = racersData.filter(r => r.bestLap).slice(0, 3);
             
@@ -356,7 +427,7 @@
                  return;
             }
 
-            const visualOrder = [1, 0, 2]; // 2nd, 1st, 3rd
+            const visualOrder = [1, 0, 2];
             visualOrder.forEach(placeIndex => {
                 if (winners[placeIndex]) {
                     const racer = winners[placeIndex];
@@ -392,7 +463,6 @@
             if (!isAdmin) return;
 
             els.adminRacerList.innerHTML = '';
-            // Admin Sort: By Number
             const sortedByNum = [...racersData].sort((a,b) => String(a.number).localeCompare(String(b.number)));
 
             sortedByNum.forEach(racer => {
@@ -403,7 +473,6 @@
                 const div = document.createElement('div');
                 div.className = "bg-black/40 border border-gray-700 rounded-lg overflow-hidden flex flex-col";
                 
-                // Card Header
                 div.innerHTML = `
                     <div class="p-4 bg-gray-800/50 flex justify-between items-start border-b border-gray-700">
                         <div>
@@ -427,9 +496,8 @@
                         </div>
                     </div>
 
-                    <!-- Action Area -->
                     <div class="p-4 bg-gray-900/30">
-                        <div class="flex gap-2 items-end">
+                        <div class="flex gap-2 items-end mb-3">
                             <div class="flex-grow">
                                 <label class="text-[10px] text-gray-500 uppercase tracking-wider block mb-1">Log New Lap (Sec)</label>
                                 <input type="number" step="0.001" id="time-${racer.id}" placeholder="e.g. 82.15" 
@@ -439,124 +507,184 @@
                                 <i class="fa-solid fa-plus"></i>
                             </button>
                         </div>
+                        <button onclick="window.openDriverDetails('${racer.id}')" class="w-full bg-blue-900/20 hover:bg-blue-900/40 text-blue-400 border border-blue-900/50 py-2 rounded text-xs font-bold uppercase transition flex justify-center items-center gap-2">
+                            <i class="fa-solid fa-pen-to-square"></i> Edit / Manage Laps
+                        </button>
                     </div>
-
-                    <!-- Lap History Dropdown -->
-                    <details class="group border-t border-gray-700">
-                        <summary class="cursor-pointer p-3 text-xs text-center text-gray-500 hover:bg-gray-800 transition select-none flex justify-center items-center gap-2">
-                            <span>VIEW LAP HISTORY</span>
-                            <i class="fa-solid fa-chevron-down group-open:rotate-180 transition"></i>
-                        </summary>
-                        <div class="max-h-40 overflow-y-auto lap-history p-2 bg-black/40">
-                            ${laps.map((lap, i) => `
-                                <div class="flex justify-between px-3 py-1.5 border-b border-gray-800 text-xs font-mono last:border-0 hover:bg-white/5">
-                                    <span class="text-gray-500">Lap ${i+1}</span>
-                                    <span class="${lap === best ? 'text-[var(--neon-green)] font-bold' : 'text-gray-300'}">
-                                        ${formatTime(lap)} ${lap === best ? '★' : ''}
-                                    </span>
-                                </div>
-                            `).reverse().join('') || '<div class="text-center py-2 text-gray-600 text-xs">No laps recorded</div>'}
-                        </div>
-                        <div class="p-2 border-t border-gray-800 text-center">
-                             <button onclick="window.deleteRacer('${racer.id}')" class="text-red-500 hover:text-red-400 text-xs font-bold uppercase hover:underline">
-                                Delete Driver
-                            </button>
-                        </div>
-                    </details>
                 `;
                 els.adminRacerList.appendChild(div);
             });
         }
 
-        // --- Admin Actions ---
+        // --- Driver Detail Logic ---
 
-        // 1. Race Config
+        window.openDriverDetails = (racerId) => {
+            currentEditingRacerId = racerId;
+            renderDriverDetail(racerId);
+            
+            // Switch Views
+            els.manageView.classList.add('hidden');
+            els.driverDetailView.classList.remove('hidden');
+            window.scrollTo(0,0);
+        };
+
+        window.closeDriverDetails = () => {
+            currentEditingRacerId = null;
+            els.driverDetailView.classList.add('hidden');
+            els.manageView.classList.remove('hidden');
+        };
+
+        function renderDriverDetail(racerId) {
+            const racer = racersData.find(r => r.id === racerId);
+            if (!racer) { window.closeDriverDetails(); return; }
+
+            // Populate Edit Form
+            els.editId.value = racer.id;
+            els.editName.value = racer.name;
+            els.editNumber.value = racer.number;
+            els.detailTotalLaps.innerText = `${racer.laps ? racer.laps.length : 0} Total Laps`;
+
+            // Populate Lap Table
+            els.detailLapList.innerHTML = '';
+            const laps = racer.laps || [];
+            
+            if (laps.length === 0) {
+                els.detailLapList.innerHTML = '<tr><td colspan="3" class="p-4 text-center text-gray-600 text-sm">No laps recorded yet.</td></tr>';
+            } else {
+                // Reverse to show latest first, but keep track of original index
+                laps.map((time, index) => ({ time, index })).reverse().forEach(item => {
+                    const isBest = item.time === racer.bestLap;
+                    const tr = document.createElement('tr');
+                    tr.className = "hover:bg-white/5 border-b border-gray-800 last:border-0";
+                    tr.innerHTML = `
+                        <td class="p-3 text-gray-500 font-mono text-sm">${item.index + 1}</td>
+                        <td class="p-3 font-mono ${isBest ? 'text-[var(--neon-green)] font-bold' : 'text-gray-300'}">
+                            ${formatTime(item.time)} ${isBest ? '<i class="fa-solid fa-star text-[10px] ml-1"></i>' : ''}
+                        </td>
+                        <td class="p-3 text-right">
+                            <button onclick="window.deleteLap('${racerId}', ${item.index})" class="text-red-500 hover:text-white bg-red-900/20 hover:bg-red-600 p-1.5 rounded transition text-xs">
+                                <i class="fa-solid fa-trash"></i>
+                            </button>
+                        </td>
+                    `;
+                    els.detailLapList.appendChild(tr);
+                });
+            }
+        }
+
+        document.getElementById('editDriverForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!currentEditingRacerId) return;
+
+            const newName = els.editName.value;
+            const newNum = els.editNumber.value;
+
+            try {
+                const ref = doc(db, 'artifacts', APP_ID, 'public', 'data', 'racers', currentEditingRacerId);
+                await updateDoc(ref, { name: newName, number: newNum });
+                showToast("Updated", "Driver details saved");
+            } catch (err) { console.error(err); showToast("Error", "Save failed", true); }
+        });
+
+        window.deleteCurrentDriver = async () => {
+             if (!currentEditingRacerId || !confirm("Permanently delete this driver and all history?")) return;
+             try {
+                await deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'racers', currentEditingRacerId));
+                showToast("Deleted", "Driver removed");
+                window.closeDriverDetails();
+            } catch (err) { showToast("Error", "Delete failed", true); }
+        };
+
+        window.deleteLap = async (racerId, lapIndex) => {
+            if (!confirm(`Delete Lap ${lapIndex + 1}?`)) return;
+
+            try {
+                const racerRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'racers', racerId);
+                const racerSnap = await getDoc(racerRef);
+                
+                if (racerSnap.exists()) {
+                    const data = racerSnap.data();
+                    const laps = [...data.laps];
+                    
+                    // Remove the specific lap
+                    if (lapIndex >= 0 && lapIndex < laps.length) {
+                        laps.splice(lapIndex, 1);
+                        
+                        // Recalculate Stats
+                        const newBest = laps.length > 0 ? Math.min(...laps) : null;
+                        const lastLap = laps.length > 0 ? laps[laps.length - 1] : null;
+
+                        await updateDoc(racerRef, {
+                            laps: laps,
+                            bestLap: newBest,
+                            lastLap: lastLap
+                        });
+                        showToast("Lap Deleted", "Stats recalculated");
+                    }
+                }
+            } catch (err) {
+                console.error(err);
+                showToast("Error", "Could not delete lap", true);
+            }
+        };
+
+
+        // --- Existing Admin Actions ---
+
         document.getElementById('raceConfigForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             if (!isAdmin) return;
-
             const name = els.configName.value;
             const laps = parseInt(els.configLaps.value);
-
             try {
-                const configRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'config', 'main');
-                await setDoc(configRef, { name, totalLaps: laps }, { merge: true });
+                await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'config', 'main'), { name, totalLaps: laps }, { merge: true });
                 showToast("Success", "Race settings updated");
-            } catch (err) { console.error(err); showToast("Error", "Failed to update settings", true); }
+            } catch (err) { showToast("Error", "Failed to update settings", true); }
         });
 
-        // 2. Add Racer
         document.getElementById('addRacerForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             if (!isAdmin) return;
             const name = document.getElementById('racerName').value;
             const number = document.getElementById('carNumber').value;
             if(!name || !number) return;
-
             try {
                 await addDoc(collection(db, 'artifacts', APP_ID, 'public', 'data', 'racers'), {
                     name, number, bestLap: null, laps: [], status: 'racing', createdAt: Date.now()
                 });
                 document.getElementById('addRacerForm').reset();
                 showToast("Success", `Driver ${name} added`);
-            } catch (err) { console.error(err); showToast("Error", "Could not add driver", true); }
+            } catch (err) { showToast("Error", "Could not add driver", true); }
         });
 
-        // 3. Add Lap
         window.addLap = async (id) => {
             if (!isAdmin) return;
             const input = document.getElementById(`time-${id}`);
             const seconds = parseFloat(input.value);
-
-            if (isNaN(seconds) || seconds <= 0) {
-                showToast("Invalid Time", "Please enter valid seconds", true);
-                return;
-            }
-
+            if (isNaN(seconds) || seconds <= 0) { showToast("Invalid Time", "Please enter valid seconds", true); return; }
             const ms = Math.floor(seconds * 1000);
-            
             try {
-                // Get current data first to calculate array operations
-                // We use a transaction or simple read-write here. For simplicity in vanilla js/no-cloud-functions:
                 const racerRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'racers', id);
                 const racerSnap = await getDoc(racerRef);
-                
                 if (racerSnap.exists()) {
                     const data = racerSnap.data();
-                    const currentLaps = data.laps || [];
-                    const newLaps = [...currentLaps, ms];
-                    const newBest = Math.min(...newLaps); // Recalculate best from all laps
-
-                    await updateDoc(racerRef, {
-                        laps: newLaps,
-                        bestLap: newBest,
-                        lastLap: ms
-                    });
-                    
+                    const newLaps = [...(data.laps || []), ms];
+                    const newBest = Math.min(...newLaps);
+                    await updateDoc(racerRef, { laps: newLaps, bestLap: newBest, lastLap: ms });
                     input.value = '';
                     showToast("Lap Logged", `#${data.number} - ${formatTime(ms)}`);
                 }
-            } catch (err) {
-                console.error(err);
-                showToast("Error", "Update failed", true);
-            }
-        };
-
-        // 4. Delete Racer
-        window.deleteRacer = async (id) => {
-            if (!isAdmin || !confirm("Permanently delete this driver data?")) return;
-            try {
-                await deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'racers', id));
-                showToast("Deleted", "Driver removed from race");
-            } catch (err) { showToast("Error", "Could not delete", true); }
+            } catch (err) { showToast("Error", "Update failed", true); }
         };
 
         // --- UI Utils ---
         window.switchView = (view) => {
+            // Reset Detail View if leaving
+            if (currentEditingRacerId) window.closeDriverDetails();
+
             if (view === 'manage') {
                 els.liveView.classList.add('hidden');
                 els.manageView.classList.remove('hidden');
-                // Pre-fill config if empty
                 if(raceConfig) {
                     els.configName.value = raceConfig.name || "";
                     els.configLaps.value = raceConfig.totalLaps || "";
@@ -606,10 +734,8 @@
             const t = els.toast;
             document.getElementById('toastTitle').innerText = title;
             document.getElementById('toastMsg').innerText = msg;
-            
             t.className = `fixed bottom-6 right-6 px-6 py-4 rounded-r-lg border-l-4 shadow-2xl transform transition-all duration-300 z-50 flex items-center gap-3 max-w-xs ${isError ? 'bg-gray-800 text-white border-red-500' : 'bg-gray-800 text-white border-[var(--neon-green)]'}`;
             document.getElementById('toastIcon').innerHTML = isError ? '<i class="fa-solid fa-circle-xmark text-red-500"></i>' : '<i class="fa-solid fa-check-circle text-[var(--neon-green)]"></i>';
-
             t.classList.remove('translate-x-full');
             setTimeout(() => t.classList.add('translate-x-full'), 3000);
         }
