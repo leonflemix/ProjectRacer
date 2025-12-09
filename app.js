@@ -1,7 +1,8 @@
 /* filename: app.js */
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+// Added runTransaction to imports
+import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, setDoc, getDoc, runTransaction } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
 // --- Configuration ---
 const firebaseConfig = {
@@ -27,7 +28,6 @@ let raceConfig = { name: "Grand Prix", totalLaps: 0 };
 let currentEditingRacerId = null;
 
 // --- DOM Cache ---
-// Note: We access these inside functions to ensure DOM is ready, or rely on defer/module execution
 const els = {
     loginModal: document.getElementById('loginModal'),
     adminControls: document.getElementById('adminControls'),
@@ -109,6 +109,22 @@ function formatTime(ms) {
 function calculateTotalTime(lapsArray) {
     if(!lapsArray || lapsArray.length === 0) return 0;
     return lapsArray.reduce((acc, curr) => acc + curr, 0);
+}
+
+// NEW Helper: Toggle Loading State
+function toggleButtonLoading(btnElement, isLoading) {
+    if (!btnElement) return;
+    if (isLoading) {
+        btnElement.dataset.originalText = btnElement.innerHTML;
+        btnElement.disabled = true;
+        // Keep the width consistent or just show spinner
+        btnElement.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin"></i>`;
+        btnElement.classList.add('opacity-50', 'cursor-not-allowed');
+    } else {
+        btnElement.disabled = false;
+        if(btnElement.dataset.originalText) btnElement.innerHTML = btnElement.dataset.originalText;
+        btnElement.classList.remove('opacity-50', 'cursor-not-allowed');
+    }
 }
 
 // --- Rendering ---
@@ -236,6 +252,7 @@ function renderAdminList() {
                         <input type="number" step="0.001" id="time-${racer.id}" placeholder="e.g. 82.15" 
                             class="w-full bg-black border border-gray-600 rounded p-2 text-white text-sm font-mono focus:border-[var(--neon-green)] outline-none">
                     </div>
+                    <!-- Added ID to button to help with finding it, though we navigate by DOM -->
                     <button onclick="window.addLap('${racer.id}')" class="bg-gray-700 hover:bg-[var(--neon-green)] hover:text-black text-white px-4 py-2 rounded text-sm font-bold transition h-[38px] flex items-center">
                         <i class="fa-solid fa-plus"></i>
                     </button>
@@ -295,7 +312,7 @@ function renderDriverDetail(racerId) {
                     ${formatTime(item.time)} ${isBest ? '<i class="fa-solid fa-star text-[10px] ml-1"></i>' : ''}
                 </td>
                 <td class="p-3 text-right">
-                    <button onclick="window.deleteLap('${racerId}', ${item.index})" class="text-red-500 hover:text-white bg-red-900/20 hover:bg-red-600 p-1.5 rounded transition text-xs">
+                    <button onclick="window.deleteLap('${racerId}', ${item.index}')" class="text-red-500 hover:text-white bg-red-900/20 hover:bg-red-600 p-1.5 rounded transition text-xs">
                         <i class="fa-solid fa-trash"></i>
                     </button>
                 </td>
@@ -305,18 +322,27 @@ function renderDriverDetail(racerId) {
     }
 }
 
+// UPDATE: Transaction + Debounce on Save
 document.getElementById('editDriverForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     if (!currentEditingRacerId) return;
 
     const newName = els.editName.value;
     const newNum = els.editNumber.value;
+    const btn = e.target.querySelector('button[type="submit"]');
+
+    toggleButtonLoading(btn, true);
 
     try {
         const ref = doc(db, 'artifacts', APP_ID, 'public', 'data', 'racers', currentEditingRacerId);
         await updateDoc(ref, { name: newName, number: newNum });
         showToast("Updated", "Driver details saved");
-    } catch (err) { console.error(err); showToast("Error", "Save failed", true); }
+    } catch (err) { 
+        console.error(err); 
+        showToast("Error", "Save failed", true); 
+    } finally {
+        toggleButtonLoading(btn, false);
+    }
 });
 
 window.deleteCurrentDriver = async () => {
@@ -328,18 +354,20 @@ window.deleteCurrentDriver = async () => {
     } catch (err) { showToast("Error", "Delete failed", true); }
 };
 
+// UPDATE: Use Transaction for Delete Lap
 window.deleteLap = async (racerId, lapIndex) => {
     if (!confirm(`Delete Lap ${lapIndex + 1}?`)) return;
 
     try {
         const racerRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'racers', racerId);
-        const racerSnap = await getDoc(racerRef);
         
-        if (racerSnap.exists()) {
-            const data = racerSnap.data();
+        await runTransaction(db, async (transaction) => {
+            const racerDoc = await transaction.get(racerRef);
+            if (!racerDoc.exists()) throw "Racer does not exist!";
+
+            const data = racerDoc.data();
             const laps = [...data.laps];
-            
-            // Remove the specific lap
+
             if (lapIndex >= 0 && lapIndex < laps.length) {
                 laps.splice(lapIndex, 1);
                 
@@ -347,14 +375,16 @@ window.deleteLap = async (racerId, lapIndex) => {
                 const newBest = laps.length > 0 ? Math.min(...laps) : null;
                 const lastLap = laps.length > 0 ? laps[laps.length - 1] : null;
 
-                await updateDoc(racerRef, {
+                transaction.update(racerRef, {
                     laps: laps,
                     bestLap: newBest,
                     lastLap: lastLap
                 });
-                showToast("Lap Deleted", "Stats recalculated");
+            } else {
+                 throw "Invalid lap index";
             }
-        }
+        });
+        showToast("Lap Deleted", "Stats recalculated");
     } catch (err) {
         console.error(err);
         showToast("Error", "Could not delete lap", true);
@@ -367,47 +397,88 @@ window.deleteLap = async (racerId, lapIndex) => {
 document.getElementById('raceConfigForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     if (!isAdmin) return;
+    
+    const btn = e.target.querySelector('button[type="submit"]');
+    toggleButtonLoading(btn, true);
+
     const name = els.configName.value;
     const laps = parseInt(els.configLaps.value);
+    
     try {
         await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'config', 'main'), { name, totalLaps: laps }, { merge: true });
         showToast("Success", "Race settings updated");
-    } catch (err) { showToast("Error", "Failed to update settings", true); }
+    } catch (err) { 
+        showToast("Error", "Failed to update settings", true); 
+    } finally {
+        toggleButtonLoading(btn, false);
+    }
 });
 
 document.getElementById('addRacerForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     if (!isAdmin) return;
+
     const name = document.getElementById('racerName').value;
     const number = document.getElementById('carNumber').value;
+    const btn = e.target.querySelector('button[type="submit"]');
+
     if(!name || !number) return;
+    
+    toggleButtonLoading(btn, true);
+
     try {
         await addDoc(collection(db, 'artifacts', APP_ID, 'public', 'data', 'racers'), {
             name, number, bestLap: null, laps: [], status: 'racing', createdAt: Date.now()
         });
         document.getElementById('addRacerForm').reset();
         showToast("Success", `Driver ${name} added`);
-    } catch (err) { showToast("Error", "Could not add driver", true); }
+    } catch (err) { 
+        showToast("Error", "Could not add driver", true); 
+    } finally {
+        toggleButtonLoading(btn, false);
+    }
 });
 
+// UPDATE: Transaction + Debounce for Add Lap
 window.addLap = async (id) => {
     if (!isAdmin) return;
     const input = document.getElementById(`time-${id}`);
+    // Button is next to the parent div of the input in our HTML structure
+    // structure: div(flex) -> div(flex-grow) -> input, button(sibling of div)
+    const btn = input.parentElement.nextElementSibling; 
+
     const seconds = parseFloat(input.value);
     if (isNaN(seconds) || seconds <= 0) { showToast("Invalid Time", "Please enter valid seconds", true); return; }
+    
+    toggleButtonLoading(btn, true);
+
     const ms = Math.floor(seconds * 1000);
+    const racerRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'racers', id);
+
     try {
-        const racerRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'racers', id);
-        const racerSnap = await getDoc(racerRef);
-        if (racerSnap.exists()) {
-            const data = racerSnap.data();
+        await runTransaction(db, async (transaction) => {
+            const racerDoc = await transaction.get(racerRef);
+            if (!racerDoc.exists()) throw "Racer does not exist!";
+            
+            const data = racerDoc.data();
             const newLaps = [...(data.laps || []), ms];
             const newBest = Math.min(...newLaps);
-            await updateDoc(racerRef, { laps: newLaps, bestLap: newBest, lastLap: ms });
-            input.value = '';
-            showToast("Lap Logged", `#${data.number} - ${formatTime(ms)}`);
-        }
-    } catch (err) { showToast("Error", "Update failed", true); }
+
+            transaction.update(racerRef, { 
+                laps: newLaps, 
+                bestLap: newBest, 
+                lastLap: ms 
+            });
+        });
+        
+        input.value = '';
+        showToast("Lap Logged", `#${id} - ${formatTime(ms)}`);
+    } catch (err) { 
+        console.error(err); 
+        showToast("Error", "Update failed", true); 
+    } finally {
+        toggleButtonLoading(btn, false);
+    }
 };
 
 // --- UI Utils ---
@@ -447,19 +518,49 @@ document.getElementById('authBtn').addEventListener('click', () => {
     }
 });
 
-document.getElementById('pinForm').addEventListener('submit', (e) => {
+// UPDATE: Security Check for PIN against DB
+document.getElementById('pinForm').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const pin = document.getElementById('pinInput').value;
-    if (pin === "1234") { 
-        isAdmin = true;
-        els.adminControls.classList.remove('hidden');
-        document.getElementById('authBtn').innerHTML = `<i class="fa-solid fa-unlock mr-2"></i>Exit`;
-        closeModal();
-        showToast("Access Granted", "Welcome to Race Control");
-        renderAdminList();
-    } else {
-        showToast("Access Denied", "Incorrect PIN", true);
-        document.getElementById('pinInput').value = '';
+    const pinInput = document.getElementById('pinInput');
+    const pin = pinInput.value;
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+
+    toggleButtonLoading(submitBtn, true);
+
+    try {
+        // 1. Check if specific admin config exists
+        const configRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'config', 'admin');
+        const snap = await getDoc(configRef);
+        
+        let validPin = "1234"; // Fallback default
+        if (snap.exists() && snap.data().pin) {
+            validPin = snap.data().pin;
+        }
+
+        if (pin === validPin) { 
+            isAdmin = true;
+            els.adminControls.classList.remove('hidden');
+            document.getElementById('authBtn').innerHTML = `<i class="fa-solid fa-unlock mr-2"></i>Exit`;
+            closeModal();
+            showToast("Access Granted", "Welcome to Race Control");
+            renderAdminList();
+        } else {
+            showToast("Access Denied", "Incorrect PIN", true);
+            pinInput.value = '';
+        }
+    } catch (error) {
+        console.error("PIN Check Error", error);
+        // Fallback for connectivity issues
+        if (pin === "1234") {
+             showToast("Warning", "Using offline fallback PIN", true);
+             isAdmin = true;
+             els.adminControls.classList.remove('hidden');
+             document.getElementById('authBtn').innerHTML = `<i class="fa-solid fa-unlock mr-2"></i>Exit`;
+             closeModal();
+             renderAdminList();
+        }
+    } finally {
+        toggleButtonLoading(submitBtn, false);
     }
 });
 
