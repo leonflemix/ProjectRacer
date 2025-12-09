@@ -32,14 +32,14 @@ const els = {
     loginModal: document.getElementById('loginModal'),
     adminControls: document.getElementById('adminControls'),
     liveView: document.getElementById('liveView'),
-    historyView: document.getElementById('historyView'), // New
+    historyView: document.getElementById('historyView'),
     manageView: document.getElementById('manageView'),
     driverDetailView: document.getElementById('driverDetailView'),
     leaderboardBody: document.getElementById('leaderboardBody'),
     podiumContainer: document.getElementById('podiumContainer'),
     adminRacerList: document.getElementById('adminRacerList'),
-    historyList: document.getElementById('historyList'), // New
-    historyCount: document.getElementById('historyCount'), // New
+    historyList: document.getElementById('historyList'),
+    historyCount: document.getElementById('historyCount'),
     raceName: document.getElementById('displayRaceName'),
     raceStats: document.getElementById('displayRaceStats'),
     configName: document.getElementById('configRaceName'),
@@ -87,20 +87,21 @@ function setupListeners() {
         const racers = [];
         snapshot.forEach(doc => racers.push({ id: doc.id, ...doc.data() }));
         
-        // SORT LOGIC UPDATE: Sort by Laps (Desc) then Total Time (Asc)
+        // SORT LOGIC: 
+        // 1. Total Laps Completed (Descending)
+        // 2. Total Time Raced (Ascending)
         racersData = racers.sort((a, b) => {
             const lapsA = a.laps ? a.laps.length : 0;
             const lapsB = b.laps ? b.laps.length : 0;
 
-            // 1. Most laps is better
+            // 1. Driver with MORE laps is ahead
             if (lapsA !== lapsB) return lapsB - lapsA;
 
-            // 2. If laps equal, least total time is better
+            // 2. If laps are equal, Driver with LESS total time is ahead
             const timeA = calculateTotalTime(a.laps);
             const timeB = calculateTotalTime(b.laps);
             
-            // Handle 0 laps case (sort doesn't matter much, but keep consistent)
-            if (lapsA === 0) return 0;
+            if (lapsA === 0) return 0; // Both have 0 laps
             
             return timeA - timeB;
         });
@@ -111,11 +112,10 @@ function setupListeners() {
         if (currentEditingRacerId) renderDriverDetail(currentEditingRacerId);
     });
 
-    // History Listener (New)
+    // History Listener
     onSnapshot(collection(db, 'artifacts', APP_ID, 'public', 'data', 'history'), (snapshot) => {
         const history = [];
         snapshot.forEach(doc => history.push({ id: doc.id, ...doc.data() }));
-        // Sort by date descending
         const sortedHistory = history.sort((a,b) => b.date - a.date);
         renderHistoryList(sortedHistory);
     });
@@ -158,7 +158,7 @@ function updateRaceHeader() {
 function renderLiveView() {
     els.leaderboardBody.innerHTML = '';
     
-    // Leader Calculation based on new sort (Index 0 is leader)
+    // Leader is Index 0 because we already sorted by Laps Desc / Time Asc
     const leader = racersData[0];
     const leaderLaps = leader?.laps?.length || 0;
     const leaderTime = calculateTotalTime(leader?.laps);
@@ -175,7 +175,7 @@ function renderLiveView() {
         const rTime = calculateTotalTime(racer.laps);
         const hasRaced = rLaps > 0;
 
-        // Gap Calculation (Based on Time or Laps)
+        // Gap Calculation
         let gap = `<span class="text-gray-600">-</span>`;
         if (index > 0 && leaderLaps > 0 && hasRaced) {
             if (rLaps < leaderLaps) {
@@ -183,7 +183,7 @@ function renderLiveView() {
                 const lapDiff = leaderLaps - rLaps;
                 gap = `<span class="text-[var(--neon-red)] font-mono text-[10px] md:text-xs">+${lapDiff} Lap${lapDiff > 1 ? 's' : ''}</span>`;
             } else {
-                // Gap in Time (Same lap count)
+                // Same Laps: Gap in Time
                 const timeDiff = (rTime - leaderTime) / 1000;
                 gap = `<span class="text-[var(--neon-red)] font-mono text-[10px] md:text-xs">+${timeDiff.toFixed(2)}s</span>`;
             }
@@ -195,6 +195,7 @@ function renderLiveView() {
         const maxLaps = raceConfig.totalLaps || 0;
         const lapDisplay = maxLaps > 0 ? `${rLaps}<span class="text-gray-600">/${maxLaps}</span>` : rLaps;
 
+        // We show BEST LAP in the table as requested, even though rank is based on Total Time
         tr.innerHTML = `
             <td class="p-3 md:p-4 text-center">${rank}</td>
             <td class="p-3 md:p-4 font-mono text-gray-400 group-hover:text-white transition text-xs md:text-sm">#${racer.number}</td>
@@ -207,7 +208,7 @@ function renderLiveView() {
     });
 
     els.podiumContainer.innerHTML = '';
-    // Winners logic: Top 3 from sorted list who have actually raced
+    // Winners logic: Top 3 from sorted list
     const winners = racersData.filter(r => r.laps && r.laps.length > 0).slice(0, 3);
     
     if (winners.length === 0) {
@@ -220,9 +221,6 @@ function renderLiveView() {
         if (winners[placeIndex]) {
             const racer = winners[placeIndex];
             const realRank = placeIndex + 1;
-            // Calculate total time for display on podium if needed, or stick to best lap?
-            // User asked for calculation by total time, but display can remain best lap or show total.
-            // Keeping display as Best Lap for "highlight", but rank is determined by total.
             
             let styles = {
                 1: { h: 'h-32 md:h-56', bg: 'bg-[var(--neon-green)]', order: 'order-2', scale: 'scale-110 z-10', text: 'text-black' },
@@ -250,7 +248,7 @@ function renderLiveView() {
     document.getElementById('lastUpdated').innerText = `UPDATED: ${new Date().toLocaleTimeString()}`;
 }
 
-// NEW: Render History List
+// History Render (Same as before)
 function renderHistoryList(historyData) {
     els.historyCount.innerText = `${historyData.length} Races Archived`;
     els.historyList.innerHTML = '';
@@ -262,11 +260,9 @@ function renderHistoryList(historyData) {
 
     historyData.forEach(race => {
         const date = new Date(race.date).toLocaleDateString();
-        
         const card = document.createElement('div');
         card.className = "glass-panel p-4 rounded-xl border border-gray-800 hover:border-gray-600 transition flex flex-col gap-3";
         
-        // Generate Podium HTML
         let podiumHtml = '';
         if (race.podium) {
             podiumHtml = race.podium.map((p, i) => `
@@ -285,11 +281,7 @@ function renderHistoryList(historyData) {
                 </div>
                 <i class="fa-solid fa-trophy text-yellow-500/50 text-xl"></i>
             </div>
-            
-            <div class="bg-black/30 rounded p-2 gap-1 flex flex-col">
-                ${podiumHtml}
-            </div>
-            
+            <div class="bg-black/30 rounded p-2 gap-1 flex flex-col">${podiumHtml}</div>
             <div class="mt-auto pt-2 text-[10px] text-gray-500 text-center uppercase tracking-wider">
                 ${race.totalDrivers || '-'} Drivers • ${race.totalLaps || '-'} Laps
             </div>
@@ -356,11 +348,9 @@ function renderAdminList() {
 }
 
 // --- Driver Detail Logic ---
-
 window.openDriverDetails = (racerId) => {
     currentEditingRacerId = racerId;
     renderDriverDetail(racerId);
-    
     els.manageView.classList.add('hidden');
     els.driverDetailView.classList.remove('hidden');
     window.scrollTo(0,0);
@@ -443,7 +433,6 @@ window.deleteLap = async (racerId, lapIndex) => {
 
     try {
         const racerRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'racers', racerId);
-        
         await runTransaction(db, async (transaction) => {
             const racerDoc = await transaction.get(racerRef);
             if (!racerDoc.exists()) throw "Racer does not exist!";
@@ -462,162 +451,10 @@ window.deleteLap = async (racerId, lapIndex) => {
             }
         });
         showToast("Lap Deleted", "Stats recalculated");
-    } catch (err) {
-        console.error(err);
-        showToast("Error", "Could not delete lap", true);
-    }
+    } catch (err) { console.error(err); showToast("Error", "Could not delete lap", true); }
 };
 
-// --- NEW FUNCTIONALITY: Archive Race ---
-window.archiveRace = async () => {
-    if(!isAdmin) return;
-    if(!confirm("⚠️ End Current Race?\n\nThis will:\n1. Save results to History\n2. DELETE all current drivers\n3. Reset the track")) return;
-
-    try {
-        // 1. Prepare History Object
-        // MODIFIED: Include Total Laps and Total Time in archive
-        const podium = racersData.slice(0, 3).map(r => ({ 
-            name: r.name, 
-            number: r.number, 
-            best: r.bestLap,
-            laps: r.laps ? r.laps.length : 0,
-            totalTime: calculateTotalTime(r.laps)
-        }));
-
-        const historyData = {
-            raceName: raceConfig.name,
-            totalLaps: raceConfig.totalLaps,
-            totalDrivers: racersData.length,
-            date: Date.now(),
-            podium: podium,
-            // Optional: Store full results if needed later
-            // results: racersData 
-        };
-
-        // 2. Add to History Collection
-        await addDoc(collection(db, 'artifacts', APP_ID, 'public', 'data', 'history'), historyData);
-
-        // 3. Delete All Racers (Batch)
-        const batch = writeBatch(db);
-        racersData.forEach(r => {
-            const ref = doc(db, 'artifacts', APP_ID, 'public', 'data', 'racers', r.id);
-            batch.delete(ref);
-        });
-        await batch.commit();
-
-        showToast("Race Archived", "Track is now clear");
-        
-    } catch(e) {
-        console.error(e);
-        showToast("Error", "Archive failed", true);
-    }
-};
-
-// --- View Logic ---
-
-window.switchView = (view) => {
-    if (currentEditingRacerId) window.closeDriverDetails();
-    if (view === 'manage') {
-        els.liveView.classList.add('hidden');
-        els.historyView.classList.add('hidden');
-        els.manageView.classList.remove('hidden');
-        // Admin overrides public tabs visually
-        if(raceConfig) {
-            els.configName.value = raceConfig.name || "";
-            els.configLaps.value = raceConfig.totalLaps || "";
-        }
-        renderAdminList();
-    } else {
-        els.manageView.classList.add('hidden');
-        // Default to live view when exiting admin
-        switchPublicView('live'); 
-    }
-};
-
-window.switchPublicView = (view) => {
-    // If Admin mode is active, turn it off visually or handle it? 
-    // Simplified: Public tabs switch between Live and History
-    els.manageView.classList.add('hidden');
-    
-    if (view === 'history') {
-        els.liveView.classList.add('hidden');
-        els.historyView.classList.remove('hidden');
-        
-        // Tab Styles
-        els.tabLive.className = "flex-1 md:flex-none px-6 py-2 rounded-md text-sm font-bold text-gray-400 hover:text-white transition";
-        els.tabHistory.className = "flex-1 md:flex-none px-6 py-2 rounded-md text-sm font-bold bg-[var(--neon-green)] text-black shadow-lg transition";
-    } else {
-        els.historyView.classList.add('hidden');
-        els.liveView.classList.remove('hidden');
-        
-        // Tab Styles
-        els.tabHistory.className = "flex-1 md:flex-none px-6 py-2 rounded-md text-sm font-bold text-gray-400 hover:text-white transition";
-        els.tabLive.className = "flex-1 md:flex-none px-6 py-2 rounded-md text-sm font-bold bg-[var(--neon-green)] text-black shadow-lg transition";
-    }
-};
-
-window.closeModal = () => {
-    els.loginModal.classList.add('hidden');
-    document.getElementById('pinInput').value = '';
-};
-
-document.getElementById('authBtn').addEventListener('click', () => {
-    if (isAdmin) {
-        isAdmin = false;
-        els.adminControls.classList.add('hidden');
-        document.getElementById('authBtn').innerHTML = `<i class="fa-solid fa-lock mr-2"></i>Admin`;
-        switchView('live');
-        showToast("Logged Out", "Admin mode disabled");
-    } else {
-        els.loginModal.classList.remove('hidden');
-        document.getElementById('pinInput').focus();
-    }
-});
-
-document.getElementById('pinForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const pinInput = document.getElementById('pinInput');
-    const pin = pinInput.value;
-    const submitBtn = e.target.querySelector('button[type="submit"]');
-
-    toggleButtonLoading(submitBtn, true);
-
-    try {
-        const configRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'config', 'admin');
-        const snap = await getDoc(configRef);
-        
-        let validPin = "1234";
-        if (snap.exists() && snap.data().pin) {
-            validPin = snap.data().pin;
-        }
-
-        if (pin === validPin) { 
-            isAdmin = true;
-            els.adminControls.classList.remove('hidden');
-            document.getElementById('authBtn').innerHTML = `<i class="fa-solid fa-unlock mr-2"></i>Exit`;
-            closeModal();
-            showToast("Access Granted", "Welcome to Race Control");
-            renderAdminList();
-        } else {
-            showToast("Access Denied", "Incorrect PIN", true);
-            pinInput.value = '';
-        }
-    } catch (error) {
-        console.error("PIN Check Error", error);
-        if (pin === "1234") {
-             showToast("Warning", "Using offline fallback PIN", true);
-             isAdmin = true;
-             els.adminControls.classList.remove('hidden');
-             document.getElementById('authBtn').innerHTML = `<i class="fa-solid fa-unlock mr-2"></i>Exit`;
-             closeModal();
-             renderAdminList();
-        }
-    } finally {
-        toggleButtonLoading(submitBtn, false);
-    }
-});
-
-// Existing Actions
+// --- Actions (with Lap Check) ---
 document.getElementById('raceConfigForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     if (!isAdmin) return;
@@ -661,15 +498,142 @@ window.addLap = async (id) => {
         await runTransaction(db, async (transaction) => {
             const racerDoc = await transaction.get(racerRef);
             if (!racerDoc.exists()) throw "Racer does not exist!";
+            
             const data = racerDoc.data();
+            
+            // CHECK: Prevent more laps than configured
+            if (raceConfig.totalLaps > 0 && (data.laps || []).length >= raceConfig.totalLaps) {
+                throw `Race limit (${raceConfig.totalLaps} laps) reached!`;
+            }
+
             const newLaps = [...(data.laps || []), ms];
             const newBest = Math.min(...newLaps);
             transaction.update(racerRef, { laps: newLaps, bestLap: newBest, lastLap: ms });
         });
         input.value = '';
         showToast("Lap Logged", `#${id} - ${formatTime(ms)}`);
-    } catch (err) { console.error(err); showToast("Error", "Update failed", true); } finally { toggleButtonLoading(btn, false); }
+    } catch (err) { 
+        console.error(err); 
+        // Show specific error if it's our race limit error
+        showToast("Error", typeof err === 'string' ? err : "Update failed", true); 
+    } finally { 
+        toggleButtonLoading(btn, false); 
+    }
 };
+
+window.archiveRace = async () => {
+    if(!isAdmin) return;
+    if(!confirm("⚠️ End Current Race?\n\nThis will:\n1. Save results to History\n2. DELETE all current drivers\n3. Reset the track")) return;
+    try {
+        const podium = racersData.slice(0, 3).map(r => ({ 
+            name: r.name, 
+            number: r.number, 
+            best: r.bestLap,
+            laps: r.laps ? r.laps.length : 0,
+            totalTime: calculateTotalTime(r.laps)
+        }));
+        const historyData = {
+            raceName: raceConfig.name,
+            totalLaps: raceConfig.totalLaps,
+            totalDrivers: racersData.length,
+            date: Date.now(),
+            podium: podium
+        };
+        await addDoc(collection(db, 'artifacts', APP_ID, 'public', 'data', 'history'), historyData);
+        const batch = writeBatch(db);
+        racersData.forEach(r => {
+            const ref = doc(db, 'artifacts', APP_ID, 'public', 'data', 'racers', r.id);
+            batch.delete(ref);
+        });
+        await batch.commit();
+        showToast("Race Archived", "Track is now clear");
+    } catch(e) { console.error(e); showToast("Error", "Archive failed", true); }
+};
+
+window.switchView = (view) => {
+    if (currentEditingRacerId) window.closeDriverDetails();
+    if (view === 'manage') {
+        els.liveView.classList.add('hidden');
+        els.historyView.classList.add('hidden');
+        els.manageView.classList.remove('hidden');
+        if(raceConfig) {
+            els.configName.value = raceConfig.name || "";
+            els.configLaps.value = raceConfig.totalLaps || "";
+        }
+        renderAdminList();
+    } else {
+        els.manageView.classList.add('hidden');
+        switchPublicView('live'); 
+    }
+};
+
+window.switchPublicView = (view) => {
+    els.manageView.classList.add('hidden');
+    if (view === 'history') {
+        els.liveView.classList.add('hidden');
+        els.historyView.classList.remove('hidden');
+        els.tabLive.className = "flex-1 md:flex-none px-6 py-2 rounded-md text-sm font-bold text-gray-400 hover:text-white transition";
+        els.tabHistory.className = "flex-1 md:flex-none px-6 py-2 rounded-md text-sm font-bold bg-[var(--neon-green)] text-black shadow-lg transition";
+    } else {
+        els.historyView.classList.add('hidden');
+        els.liveView.classList.remove('hidden');
+        els.tabHistory.className = "flex-1 md:flex-none px-6 py-2 rounded-md text-sm font-bold text-gray-400 hover:text-white transition";
+        els.tabLive.className = "flex-1 md:flex-none px-6 py-2 rounded-md text-sm font-bold bg-[var(--neon-green)] text-black shadow-lg transition";
+    }
+};
+
+window.closeModal = () => {
+    els.loginModal.classList.add('hidden');
+    document.getElementById('pinInput').value = '';
+};
+
+document.getElementById('authBtn').addEventListener('click', () => {
+    if (isAdmin) {
+        isAdmin = false;
+        els.adminControls.classList.add('hidden');
+        document.getElementById('authBtn').innerHTML = `<i class="fa-solid fa-lock mr-2"></i>Admin`;
+        switchView('live');
+        showToast("Logged Out", "Admin mode disabled");
+    } else {
+        els.loginModal.classList.remove('hidden');
+        document.getElementById('pinInput').focus();
+    }
+});
+
+document.getElementById('pinForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const pinInput = document.getElementById('pinInput');
+    const pin = pinInput.value;
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+    toggleButtonLoading(submitBtn, true);
+    try {
+        const configRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'config', 'admin');
+        const snap = await getDoc(configRef);
+        let validPin = "1234";
+        if (snap.exists() && snap.data().pin) validPin = snap.data().pin;
+        if (pin === validPin) { 
+            isAdmin = true;
+            els.adminControls.classList.remove('hidden');
+            document.getElementById('authBtn').innerHTML = `<i class="fa-solid fa-unlock mr-2"></i>Exit`;
+            closeModal();
+            showToast("Access Granted", "Welcome to Race Control");
+            renderAdminList();
+        } else {
+            showToast("Access Denied", "Incorrect PIN", true);
+            pinInput.value = '';
+        }
+    } catch (error) {
+        console.error("PIN Check Error", error);
+        if (pin === "1234") {
+             showToast("Warning", "Using offline fallback PIN", true);
+             isAdmin = true;
+             els.adminControls.classList.remove('hidden');
+             document.getElementById('authBtn').innerHTML = `<i class="fa-solid fa-unlock mr-2"></i>Exit`;
+             closeModal();
+             renderAdminList();
+        }
+    } finally { toggleButtonLoading(submitBtn, false); }
+});
 
 function showToast(title, msg, isError = false) {
     const t = els.toast;
