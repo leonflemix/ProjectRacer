@@ -3,7 +3,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>SpeedTrack - Race Control</title>
     
     <!-- Tailwind CSS -->
@@ -18,74 +18,84 @@
     <!-- Custom CSS -->
     <link rel="stylesheet" href="styles.css">
 </head>
-<body class="min-h-screen flex flex-col">
+<body class="min-h-screen flex flex-col pb-20 md:pb-0">
 
     <!-- Header -->
     <header class="bg-black border-b border-gray-800 p-4 sticky top-0 z-50 shadow-lg">
         <div class="max-w-7xl mx-auto flex justify-between items-center">
-            <div class="flex items-center gap-4">
-                <i class="fa-solid fa-flag-checkered text-3xl text-[var(--neon-green)]"></i>
-                <div>
-                    <h1 class="text-xl md:text-2xl font-racing tracking-wider uppercase" id="displayRaceName">
+            <div class="flex items-center gap-3">
+                <i class="fa-solid fa-flag-checkered text-2xl md:text-3xl text-[var(--neon-green)]"></i>
+                <div class="leading-tight">
+                    <h1 class="text-lg md:text-2xl font-racing tracking-wider uppercase truncate max-w-[150px] md:max-w-none" id="displayRaceName">
                         Grand Prix
                     </h1>
-                    <div class="text-xs text-gray-500 font-mono tracking-widest" id="displayRaceStats">
-                        LOADING RACE DATA...
+                    <div class="text-[10px] md:text-xs text-gray-500 font-mono tracking-widest hidden md:block" id="displayRaceStats">
+                        LOADING...
                     </div>
                 </div>
             </div>
-            <button id="authBtn" class="px-4 py-2 rounded bg-gray-800 hover:bg-gray-700 transition text-sm font-semibold border border-gray-700">
+            <button id="authBtn" class="px-3 py-1.5 md:px-4 md:py-2 rounded bg-gray-800 hover:bg-gray-700 transition text-xs md:text-sm font-semibold border border-gray-700 whitespace-nowrap">
                 <i class="fa-solid fa-lock mr-2"></i>Admin
             </button>
         </div>
     </header>
 
     <!-- Main Content -->
-    <main class="flex-grow p-4 md:p-6 max-w-7xl mx-auto w-full grid grid-cols-1 gap-8">
+    <main class="flex-grow p-3 md:p-6 max-w-7xl mx-auto w-full flex flex-col gap-6">
         
+        <!-- Public Navigation (Tabs) -->
+        <div class="flex p-1 bg-gray-900 rounded-lg self-start w-full md:w-auto">
+            <button onclick="switchPublicView('live')" id="tabLive" class="flex-1 md:flex-none px-6 py-2 rounded-md text-sm font-bold transition bg-[var(--neon-green)] text-black shadow-lg">
+                LIVE RACE
+            </button>
+            <button onclick="switchPublicView('history')" id="tabHistory" class="flex-1 md:flex-none px-6 py-2 rounded-md text-sm font-bold text-gray-400 hover:text-white transition">
+                PAST RESULTS
+            </button>
+        </div>
+
         <!-- Admin Controls Bar -->
-        <div id="adminControls" class="hidden w-full bg-yellow-900/10 border border-yellow-600/30 p-4 rounded-xl flex flex-col md:flex-row justify-between items-center gap-4 mb-4 backdrop-blur-sm">
-            <div class="flex items-center gap-3 text-yellow-500">
-                <div class="p-2 bg-yellow-500/10 rounded-lg">
-                    <i class="fa-solid fa-user-shield text-xl"></i>
-                </div>
-                <span class="font-bold uppercase tracking-wider text-sm">Race Control Active</span>
+        <div id="adminControls" class="hidden w-full bg-yellow-900/10 border border-yellow-600/30 p-3 md:p-4 rounded-xl flex flex-col md:flex-row justify-between items-center gap-3 backdrop-blur-sm">
+            <div class="flex items-center gap-2 text-yellow-500 w-full md:w-auto justify-center md:justify-start">
+                <i class="fa-solid fa-user-shield"></i>
+                <span class="font-bold uppercase tracking-wider text-xs md:text-sm">Admin Active</span>
             </div>
             <div class="flex gap-2 w-full md:w-auto">
-                <button onclick="switchView('live')" class="flex-1 md:flex-none px-6 py-2 rounded bg-black/50 hover:bg-black/70 border border-gray-600 transition text-sm uppercase font-bold">Live View</button>
-                <button onclick="switchView('manage')" class="flex-1 md:flex-none px-6 py-2 rounded bg-yellow-600 hover:bg-yellow-500 text-black font-bold transition text-sm uppercase shadow-[0_0_15px_rgba(234,179,8,0.3)]">Manage Race</button>
+                <button onclick="switchView('live')" class="flex-1 md:flex-none px-4 py-2 rounded bg-black/50 hover:bg-black/70 border border-gray-600 transition text-xs md:text-sm uppercase font-bold">Race View</button>
+                <button onclick="switchView('manage')" class="flex-1 md:flex-none px-4 py-2 rounded bg-yellow-600 hover:bg-yellow-500 text-black font-bold transition text-xs md:text-sm uppercase shadow-lg">Manage</button>
             </div>
         </div>
 
         <!-- LIVE VIEW SECTION -->
-        <div id="liveView" class="space-y-8 animate-fade-in">
+        <div id="liveView" class="space-y-6 animate-fade-in">
             
             <!-- Podium -->
-            <div class="relative h-64 md:h-80 w-full flex justify-center items-end gap-2 md:gap-6 pb-4 border-b border-gray-800" id="podiumContainer">
+            <div class="relative h-56 md:h-80 w-full flex justify-center items-end gap-2 md:gap-6 pb-4 border-b border-gray-800" id="podiumContainer">
                 <div class="text-gray-500 text-center w-full flex flex-col items-center justify-center h-full">
                     <i class="fa-solid fa-circle-notch fa-spin text-2xl mb-2 text-[var(--neon-green)]"></i>
-                    <p class="text-sm font-mono">Fetching Telemetry...</p>
+                    <p class="text-xs md:text-sm font-mono">Fetching Telemetry...</p>
                 </div>
             </div>
 
             <!-- Leaderboard -->
             <div class="glass-panel rounded-xl overflow-hidden shadow-2xl">
-                <div class="p-4 bg-gray-900/50 border-b border-gray-800 flex justify-between items-center">
+                <div class="p-3 bg-gray-900/50 border-b border-gray-800 flex justify-between items-center">
                     <h2 class="text-sm md:text-lg font-bold flex items-center gap-2 uppercase tracking-wider">
-                        <i class="fa-solid fa-list-ol text-[var(--neon-blue)]"></i> Live Standings
+                        <i class="fa-solid fa-list-ol text-[var(--neon-blue)]"></i> Standings
                     </h2>
-                    <span class="text-[10px] md:text-xs text-gray-500 uppercase tracking-widest font-mono" id="lastUpdated">Syncing...</span>
+                    <span class="text-[10px] text-gray-500 uppercase tracking-widest font-mono" id="lastUpdated">Syncing...</span>
                 </div>
                 <div class="overflow-x-auto">
                     <table class="w-full text-left border-collapse">
                         <thead>
-                            <tr class="text-gray-500 text-xs uppercase tracking-wider border-b border-gray-800 bg-black/20">
-                                <th class="p-4 text-center w-12">Pos</th>
-                                <th class="p-4 w-16">#</th>
-                                <th class="p-4">Driver</th>
-                                <th class="p-4 text-center">Laps</th>
-                                <th class="p-4 text-right">Best Lap</th>
-                                <th class="p-4 text-right">Gap</th>
+                            <tr class="text-gray-500 text-[10px] md:text-xs uppercase tracking-wider border-b border-gray-800 bg-black/20">
+                                <th class="p-3 md:p-4 text-center w-10 md:w-16">Pos</th>
+                                <th class="p-3 md:p-4 w-12 md:w-16">#</th>
+                                <th class="p-3 md:p-4">Driver</th>
+                                <!-- Hidden on mobile -->
+                                <th class="p-3 md:p-4 text-center hidden md:table-cell">Laps</th>
+                                <th class="p-3 md:p-4 text-right">Best Lap</th>
+                                <!-- Hidden on mobile -->
+                                <th class="p-3 md:p-4 text-right hidden md:table-cell">Gap</th>
                             </tr>
                         </thead>
                         <tbody id="leaderboardBody" class="text-sm font-medium divide-y divide-gray-800/50">
@@ -96,13 +106,35 @@
             </div>
         </div>
 
+        <!-- HISTORY VIEW SECTION (New) -->
+        <div id="historyView" class="hidden space-y-6 animate-fade-in">
+             <div class="flex justify-between items-end border-b border-gray-800 pb-2">
+                <h2 class="text-xl font-racing text-gray-400">Race Archive</h2>
+                <span class="text-xs text-gray-500 font-mono" id="historyCount">0 Races Found</span>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="historyList">
+                <!-- History Cards injected here -->
+            </div>
+        </div>
+
         <!-- ADMIN MANAGE SECTION -->
         <div id="manageView" class="hidden space-y-6 animate-fade-in">
             
+            <!-- End Race Control (New) -->
+            <div class="glass-panel p-4 md:p-6 rounded-xl border-l-4 border-red-600 bg-red-900/10">
+                <h3 class="text-lg font-bold mb-2 flex items-center gap-2 uppercase tracking-wider text-red-500">
+                    <i class="fa-solid fa-flag-checkered"></i> Finish & Archive
+                </h3>
+                <p class="text-xs text-gray-400 mb-4">Ends the current race, saves results to history, and clears the leaderboard for new drivers.</p>
+                <button onclick="window.archiveRace()" class="w-full md:w-auto bg-red-600 hover:bg-red-500 text-white font-bold py-3 px-6 rounded transition uppercase text-sm shadow-lg flex items-center justify-center gap-2">
+                    <span>Archive Current Race</span>
+                </button>
+            </div>
+
             <!-- Race Configuration -->
-            <div class="glass-panel p-6 rounded-xl border-l-4 border-[var(--neon-blue)]">
+            <div class="glass-panel p-4 md:p-6 rounded-xl border-l-4 border-[var(--neon-blue)]">
                 <h3 class="text-lg font-bold mb-4 flex items-center gap-2 uppercase tracking-wider">
-                    <i class="fa-solid fa-sliders text-[var(--neon-blue)]"></i> Race Configuration
+                    <i class="fa-solid fa-sliders text-[var(--neon-blue)]"></i> Configuration
                 </h3>
                 <form id="raceConfigForm" class="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div class="md:col-span-2">
@@ -114,31 +146,31 @@
                         <input type="number" id="configTotalLaps" class="w-full bg-black/50 border border-gray-700 rounded p-3 text-white focus:border-[var(--neon-blue)] outline-none" placeholder="e.g. 50">
                     </div>
                     <div class="md:col-span-3 text-right">
-                        <button type="submit" class="bg-[var(--neon-blue)] hover:bg-cyan-400 text-black font-bold py-2 px-6 rounded transition text-sm uppercase">
-                            Update Race Info
+                        <button type="submit" class="w-full md:w-auto bg-[var(--neon-blue)] hover:bg-cyan-400 text-black font-bold py-3 px-6 rounded transition text-sm uppercase">
+                            Update Settings
                         </button>
                     </div>
                 </form>
             </div>
 
             <!-- Add New Racer -->
-            <div class="glass-panel p-6 rounded-xl border-l-4 border-[var(--neon-green)]">
+            <div class="glass-panel p-4 md:p-6 rounded-xl border-l-4 border-[var(--neon-green)]">
                 <h3 class="text-lg font-bold mb-4 flex items-center gap-2 uppercase tracking-wider">
-                    <i class="fa-solid fa-user-plus text-[var(--neon-green)]"></i> Driver Registration
+                    <i class="fa-solid fa-user-plus text-[var(--neon-green)]"></i> Registration
                 </h3>
                 <form id="addRacerForm" class="flex flex-col md:flex-row gap-4">
                     <input type="text" id="racerName" placeholder="Driver Name" class="bg-black/50 border border-gray-700 rounded p-3 text-white focus:border-[var(--neon-green)] outline-none flex-grow">
-                    <input type="text" id="carNumber" placeholder="Car #" class="bg-black/50 border border-gray-700 rounded p-3 text-white focus:border-[var(--neon-green)] outline-none w-full md:w-32">
+                    <input type="text" id="carNumber" placeholder="#" class="bg-black/50 border border-gray-700 rounded p-3 text-white focus:border-[var(--neon-green)] outline-none w-full md:w-32">
                     <button type="submit" class="bg-[var(--neon-green)] hover:bg-[#2ecc71] text-black font-bold py-3 px-6 rounded transition flex items-center justify-center gap-2 uppercase text-sm">
-                        <span>Add Driver</span>
+                        <span>Add</span>
                     </button>
                 </form>
             </div>
 
             <!-- Active Racers List -->
-            <div class="glass-panel p-6 rounded-xl">
+            <div class="glass-panel p-4 md:p-6 rounded-xl">
                 <h3 class="text-lg font-bold mb-4 flex items-center gap-2 uppercase tracking-wider">
-                    <i class="fa-solid fa-stopwatch text-yellow-500"></i> Track Telemetry
+                    <i class="fa-solid fa-stopwatch text-yellow-500"></i> Active Drivers
                 </h3>
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-4" id="adminRacerList">
                     <!-- Admin Cards Generated via JS -->
@@ -146,18 +178,18 @@
             </div>
         </div>
 
-        <!-- DRIVER DETAIL SECTION (Hidden by default) -->
+        <!-- DRIVER DETAIL SECTION -->
         <div id="driverDetailView" class="hidden space-y-6 animate-fade-in">
             <div class="flex items-center gap-4 mb-4">
-                <button onclick="closeDriverDetails()" class="bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded flex items-center gap-2 transition">
+                <button onclick="closeDriverDetails()" class="bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded flex items-center gap-2 transition text-sm">
                     <i class="fa-solid fa-arrow-left"></i> Back
                 </button>
-                <h2 class="text-xl font-bold uppercase tracking-wider">Driver Management</h2>
+                <h2 class="text-lg md:text-xl font-bold uppercase tracking-wider">Driver Management</h2>
             </div>
 
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <!-- Left: Edit Profile -->
-                <div class="glass-panel p-6 rounded-xl h-fit">
+                <div class="glass-panel p-4 md:p-6 rounded-xl h-fit">
                     <h3 class="text-lg font-bold mb-6 text-[var(--neon-blue)] border-b border-gray-800 pb-2">Profile</h3>
                     <form id="editDriverForm" class="space-y-4">
                         <input type="hidden" id="editDriverId">
@@ -181,10 +213,10 @@
                 </div>
 
                 <!-- Right: Lap History -->
-                <div class="glass-panel p-6 rounded-xl lg:col-span-2">
+                <div class="glass-panel p-4 md:p-6 rounded-xl lg:col-span-2">
                     <h3 class="text-lg font-bold mb-4 text-[var(--neon-green)] border-b border-gray-800 pb-2 flex justify-between">
                         <span>Lap History</span>
-                        <span id="detailTotalLaps" class="text-white text-sm font-mono bg-gray-800 px-2 rounded">0 Laps</span>
+                        <span id="detailTotalLaps" class="text-white text-xs md:text-sm font-mono bg-gray-800 px-2 rounded py-1">0 Laps</span>
                     </h3>
                     
                     <div class="overflow-hidden rounded-lg border border-gray-800">
@@ -192,7 +224,7 @@
                             <table class="w-full text-left border-collapse">
                                 <thead class="bg-gray-900 sticky top-0 z-10">
                                     <tr class="text-gray-500 text-xs font-mono uppercase">
-                                        <th class="p-3 w-20">Lap #</th>
+                                        <th class="p-3 w-16">Lap</th>
                                         <th class="p-3">Time</th>
                                         <th class="p-3 text-right">Action</th>
                                     </tr>
@@ -211,11 +243,11 @@
 
     <!-- Login Modal -->
     <div id="loginModal" class="fixed inset-0 bg-black/90 z-[60] hidden flex items-center justify-center p-4">
-        <div class="glass-panel max-w-sm w-full p-8 rounded-2xl border border-gray-700 shadow-2xl relative overflow-hidden">
+        <div class="glass-panel max-w-sm w-full p-6 md:p-8 rounded-2xl border border-gray-700 shadow-2xl relative overflow-hidden">
             <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[var(--neon-green)] to-transparent"></div>
             <h2 class="text-xl font-bold mb-2 uppercase tracking-widest text-center">Admin Access</h2>
             <form id="pinForm" class="space-y-4 mt-6">
-                <input type="password" id="pinInput" placeholder="PIN" class="w-full bg-black border border-gray-700 rounded-lg p-4 text-center text-2xl tracking-[0.5em] focus:border-[var(--neon-green)] outline-none transition font-mono">
+                <input type="password" id="pinInput" placeholder="PIN" inputmode="numeric" class="w-full bg-black border border-gray-700 rounded-lg p-4 text-center text-2xl tracking-[0.5em] focus:border-[var(--neon-green)] outline-none transition font-mono">
                 <button type="submit" class="w-full py-3 rounded-lg bg-gray-800 hover:bg-gray-700 text-white font-bold transition uppercase text-sm border border-gray-700">Unlock</button>
                 <button type="button" onclick="closeModal()" class="w-full text-xs text-gray-500 hover:text-white transition">Cancel</button>
             </form>
@@ -223,7 +255,7 @@
     </div>
 
     <!-- Notification Toast -->
-    <div id="toast" class="fixed bottom-6 right-6 bg-gray-800 text-white px-6 py-4 rounded-r-lg border-l-4 border-blue-500 shadow-2xl transform translate-x-full transition-all duration-300 z-50 flex items-center gap-3 max-w-xs">
+    <div id="toast" class="fixed bottom-6 right-6 left-6 md:left-auto bg-gray-800 text-white px-6 py-4 rounded-r-lg border-l-4 border-blue-500 shadow-2xl transform translate-y-full md:translate-x-full transition-all duration-300 z-50 flex items-center gap-3 md:max-w-xs">
         <div id="toastIcon"><i class="fa-solid fa-info-circle"></i></div>
         <div>
             <h4 class="font-bold text-sm" id="toastTitle">Notification</h4>

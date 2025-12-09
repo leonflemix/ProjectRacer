@@ -1,8 +1,8 @@
 /* filename: app.js */
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-// Added runTransaction to imports
-import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, setDoc, getDoc, runTransaction } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+// Added writeBatch for archiving
+import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, setDoc, getDoc, runTransaction, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
 // --- Configuration ---
 const firebaseConfig = {
@@ -32,11 +32,14 @@ const els = {
     loginModal: document.getElementById('loginModal'),
     adminControls: document.getElementById('adminControls'),
     liveView: document.getElementById('liveView'),
+    historyView: document.getElementById('historyView'), // New
     manageView: document.getElementById('manageView'),
     driverDetailView: document.getElementById('driverDetailView'),
     leaderboardBody: document.getElementById('leaderboardBody'),
     podiumContainer: document.getElementById('podiumContainer'),
     adminRacerList: document.getElementById('adminRacerList'),
+    historyList: document.getElementById('historyList'), // New
+    historyCount: document.getElementById('historyCount'), // New
     raceName: document.getElementById('displayRaceName'),
     raceStats: document.getElementById('displayRaceStats'),
     configName: document.getElementById('configRaceName'),
@@ -47,7 +50,10 @@ const els = {
     editName: document.getElementById('editDriverName'),
     editNumber: document.getElementById('editDriverNumber'),
     detailLapList: document.getElementById('detailLapList'),
-    detailTotalLaps: document.getElementById('detailTotalLaps')
+    detailTotalLaps: document.getElementById('detailTotalLaps'),
+    // Tabs
+    tabLive: document.getElementById('tabLive'),
+    tabHistory: document.getElementById('tabHistory')
 };
 
 // --- Initialization ---
@@ -64,8 +70,8 @@ onAuthStateChanged(auth, (user) => {
 
 // --- Data Logic ---
 function setupListeners() {
-    const configRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'config', 'main');
-    onSnapshot(configRef, (doc) => {
+    // Config Listener
+    onSnapshot(doc(db, 'artifacts', APP_ID, 'public', 'data', 'config', 'main'), (doc) => {
         if (doc.exists()) {
             raceConfig = doc.data();
             updateRaceHeader();
@@ -76,8 +82,8 @@ function setupListeners() {
         }
     });
 
-    const racersRef = collection(db, 'artifacts', APP_ID, 'public', 'data', 'racers');
-    onSnapshot(racersRef, (snapshot) => {
+    // Racers Listener
+    onSnapshot(collection(db, 'artifacts', APP_ID, 'public', 'data', 'racers'), (snapshot) => {
         const racers = [];
         snapshot.forEach(doc => racers.push({ id: doc.id, ...doc.data() }));
         
@@ -90,10 +96,16 @@ function setupListeners() {
         renderLiveView();
         renderAdminList();
         
-        // If currently editing a racer, refresh their detail view too
-        if (currentEditingRacerId) {
-            renderDriverDetail(currentEditingRacerId);
-        }
+        if (currentEditingRacerId) renderDriverDetail(currentEditingRacerId);
+    });
+
+    // History Listener (New)
+    onSnapshot(collection(db, 'artifacts', APP_ID, 'public', 'data', 'history'), (snapshot) => {
+        const history = [];
+        snapshot.forEach(doc => history.push({ id: doc.id, ...doc.data() }));
+        // Sort by date descending
+        const sortedHistory = history.sort((a,b) => b.date - a.date);
+        renderHistoryList(sortedHistory);
     });
 }
 
@@ -111,13 +123,11 @@ function calculateTotalTime(lapsArray) {
     return lapsArray.reduce((acc, curr) => acc + curr, 0);
 }
 
-// NEW Helper: Toggle Loading State
 function toggleButtonLoading(btnElement, isLoading) {
     if (!btnElement) return;
     if (isLoading) {
         btnElement.dataset.originalText = btnElement.innerHTML;
         btnElement.disabled = true;
-        // Keep the width consistent or just show spinner
         btnElement.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin"></i>`;
         btnElement.classList.add('opacity-50', 'cursor-not-allowed');
     } else {
@@ -130,7 +140,7 @@ function toggleButtonLoading(btnElement, isLoading) {
 // --- Rendering ---
 function updateRaceHeader() {
     els.raceName.innerText = raceConfig.name || "Grand Prix";
-    els.raceStats.innerText = `${raceConfig.totalLaps ? raceConfig.totalLaps + ' LAPS' : 'PRACTICE SESSION'} • ${racersData.length} DRIVERS`;
+    els.raceStats.innerText = `${raceConfig.totalLaps ? raceConfig.totalLaps + ' LAPS' : 'PRACTICE'} • ${racersData.length} DRIVERS`;
 }
 
 function renderLiveView() {
@@ -138,32 +148,32 @@ function renderLiveView() {
     const bestTime = racersData[0]?.bestLap || 0;
 
     if(racersData.length === 0) {
-            els.leaderboardBody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-gray-500 font-mono">WAITING FOR ENTRIES</td></tr>`;
+        els.leaderboardBody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-gray-500 font-mono text-xs">WAITING FOR ENTRIES</td></tr>`;
     }
 
     racersData.forEach((racer, index) => {
         const tr = document.createElement('tr');
-        tr.className = "hover:bg-white/5 transition group";
+        tr.className = "hover:bg-white/5 transition group border-b border-gray-800/50 last:border-0";
         
         let gap = `<span class="text-gray-600">-</span>`;
         if (index > 0 && racer.bestLap && bestTime) {
-            gap = `<span class="text-[var(--neon-red)] font-mono text-xs">+${((racer.bestLap - bestTime) / 1000).toFixed(2)}s</span>`;
+            gap = `<span class="text-[var(--neon-red)] font-mono text-[10px] md:text-xs">+${((racer.bestLap - bestTime) / 1000).toFixed(2)}s</span>`;
         }
 
-        let rank = `<span class="font-mono text-gray-500">P${index + 1}</span>`;
-        if (index === 0 && racer.bestLap) rank = `<span class="bg-[var(--neon-green)] text-black font-bold px-2 rounded text-xs">P1</span>`;
+        let rank = `<span class="font-mono text-gray-500 text-xs md:text-sm">P${index + 1}</span>`;
+        if (index === 0 && racer.bestLap) rank = `<span class="bg-[var(--neon-green)] text-black font-bold px-2 rounded text-[10px] md:text-xs">P1</span>`;
         
         const lapCount = racer.laps ? racer.laps.length : 0;
         const maxLaps = raceConfig.totalLaps || 0;
         const lapDisplay = maxLaps > 0 ? `${lapCount}<span class="text-gray-600">/${maxLaps}</span>` : lapCount;
 
         tr.innerHTML = `
-            <td class="p-4 text-center">${rank}</td>
-            <td class="p-4 font-mono text-gray-400 group-hover:text-white transition">#${racer.number}</td>
-            <td class="p-4 font-bold text-gray-200 group-hover:text-white">${racer.name}</td>
-            <td class="p-4 text-center font-mono text-gray-400 text-xs">${lapDisplay}</td>
-            <td class="p-4 text-right font-mono text-[var(--neon-blue)]">${formatTime(racer.bestLap)}</td>
-            <td class="p-4 text-right">${gap}</td>
+            <td class="p-3 md:p-4 text-center">${rank}</td>
+            <td class="p-3 md:p-4 font-mono text-gray-400 group-hover:text-white transition text-xs md:text-sm">#${racer.number}</td>
+            <td class="p-3 md:p-4 font-bold text-gray-200 group-hover:text-white text-sm md:text-base">${racer.name}</td>
+            <td class="p-3 md:p-4 text-center font-mono text-gray-400 text-xs hidden md:table-cell">${lapDisplay}</td>
+            <td class="p-3 md:p-4 text-right font-mono text-[var(--neon-blue)] text-sm md:text-base">${formatTime(racer.bestLap)}</td>
+            <td class="p-3 md:p-4 text-right hidden md:table-cell">${gap}</td>
         `;
         els.leaderboardBody.appendChild(tr);
     });
@@ -172,8 +182,8 @@ function renderLiveView() {
     const winners = racersData.filter(r => r.bestLap).slice(0, 3);
     
     if (winners.length === 0) {
-            els.podiumContainer.innerHTML = `<div class="text-gray-600 font-mono text-sm">NO DATA AVAILABLE</div>`;
-            return;
+        els.podiumContainer.innerHTML = `<div class="text-gray-600 font-mono text-sm">NO DATA AVAILABLE</div>`;
+        return;
     }
 
     const visualOrder = [1, 0, 2];
@@ -183,9 +193,9 @@ function renderLiveView() {
             const realRank = placeIndex + 1;
             
             let styles = {
-                1: { h: 'h-40 md:h-56', bg: 'bg-[var(--neon-green)]', order: 'order-2', scale: 'scale-110 z-10', text: 'text-black' },
-                2: { h: 'h-24 md:h-40', bg: 'bg-gray-300', order: 'order-1', scale: 'scale-100 mt-8', text: 'text-black' },
-                3: { h: 'h-20 md:h-32', bg: 'bg-orange-600', order: 'order-3', scale: 'scale-95 mt-12', text: 'text-white' }
+                1: { h: 'h-32 md:h-56', bg: 'bg-[var(--neon-green)]', order: 'order-2', scale: 'scale-110 z-10', text: 'text-black' },
+                2: { h: 'h-20 md:h-40', bg: 'bg-gray-300', order: 'order-1', scale: 'scale-100 mt-8', text: 'text-black' },
+                3: { h: 'h-16 md:h-32', bg: 'bg-orange-600', order: 'order-3', scale: 'scale-95 mt-12', text: 'text-white' }
             }[realRank];
 
             const bar = document.createElement('div');
@@ -198,7 +208,7 @@ function renderLiveView() {
                     <div class="font-mono text-[10px] text-[var(--neon-green)]">${formatTime(racer.bestLap)}</div>
                 </div>
                 <div class="w-full ${styles.h} ${styles.bg} rounded-t-lg shadow-[0_0_20px_rgba(0,0,0,0.5)] relative flex items-start justify-center pt-2 border-x border-t border-white/20">
-                    <span class="${styles.text} font-black text-2xl opacity-40">${realRank}</span>
+                    <span class="${styles.text} font-black text-xl md:text-2xl opacity-40">${realRank}</span>
                 </div>
             `;
             els.podiumContainer.appendChild(bar);
@@ -206,6 +216,55 @@ function renderLiveView() {
     });
 
     document.getElementById('lastUpdated').innerText = `UPDATED: ${new Date().toLocaleTimeString()}`;
+}
+
+// NEW: Render History List
+function renderHistoryList(historyData) {
+    els.historyCount.innerText = `${historyData.length} Races Archived`;
+    els.historyList.innerHTML = '';
+
+    if (historyData.length === 0) {
+        els.historyList.innerHTML = `<div class="col-span-full text-center p-8 text-gray-600 font-mono">No archives found</div>`;
+        return;
+    }
+
+    historyData.forEach(race => {
+        const date = new Date(race.date).toLocaleDateString();
+        const winner = race.podium && race.podium[0] ? race.podium[0] : { name: 'N/A', best: 0 };
+        
+        const card = document.createElement('div');
+        card.className = "glass-panel p-4 rounded-xl border border-gray-800 hover:border-gray-600 transition flex flex-col gap-3";
+        
+        // Generate Podium HTML
+        let podiumHtml = '';
+        if (race.podium) {
+            podiumHtml = race.podium.map((p, i) => `
+                <div class="flex justify-between items-center text-xs font-mono border-b border-gray-800 pb-1 last:border-0">
+                    <span class="${i===0 ? 'text-[var(--neon-green)] font-bold' : 'text-gray-400'}">P${i+1} ${p.name}</span>
+                    <span class="text-gray-500">${formatTime(p.best)}</span>
+                </div>
+            `).join('');
+        }
+
+        card.innerHTML = `
+            <div class="flex justify-between items-start">
+                <div>
+                    <h3 class="font-bold text-white text-lg leading-tight">${race.raceName}</h3>
+                    <span class="text-[10px] text-gray-500 font-mono uppercase tracking-widest">${date}</span>
+                </div>
+                <i class="fa-solid fa-trophy text-yellow-500/50 text-xl"></i>
+            </div>
+            
+            <div class="bg-black/30 rounded p-2 gap-1 flex flex-col">
+                ${podiumHtml}
+            </div>
+            
+            <div class="mt-auto pt-2 text-[10px] text-gray-500 text-center uppercase tracking-wider">
+                ${race.totalDrivers || '-'} Drivers • ${race.totalLaps || '-'} Laps
+            </div>
+        `;
+        els.historyList.appendChild(card);
+    });
 }
 
 function renderAdminList() {
@@ -223,7 +282,7 @@ function renderAdminList() {
         div.className = "bg-black/40 border border-gray-700 rounded-lg overflow-hidden flex flex-col";
         
         div.innerHTML = `
-            <div class="p-4 bg-gray-800/50 flex justify-between items-start border-b border-gray-700">
+            <div class="p-3 md:p-4 bg-gray-800/50 flex justify-between items-start border-b border-gray-700">
                 <div>
                     <span class="text-gray-400 text-xs font-mono bg-black px-1.5 py-0.5 rounded border border-gray-700">#${racer.number}</span>
                     <div class="font-bold text-lg text-white mt-1">${racer.name}</div>
@@ -234,25 +293,24 @@ function renderAdminList() {
                 </div>
             </div>
             
-            <div class="p-4 grid grid-cols-2 gap-4 text-xs font-mono border-b border-gray-700 bg-black/20">
+            <div class="p-3 md:p-4 grid grid-cols-2 gap-4 text-xs font-mono border-b border-gray-700 bg-black/20">
                 <div>
-                    <div class="text-gray-500">Laps Completed</div>
+                    <div class="text-gray-500">Laps</div>
                     <div class="text-white text-lg">${laps.length} <span class="text-gray-600">/ ${raceConfig.totalLaps || '-'}</span></div>
                 </div>
                 <div class="text-right">
-                    <div class="text-gray-500">Total Track Time</div>
+                    <div class="text-gray-500">Track Time</div>
                     <div class="text-white text-lg">${formatTime(totalTime)}</div>
                 </div>
             </div>
 
-            <div class="p-4 bg-gray-900/30">
+            <div class="p-3 md:p-4 bg-gray-900/30">
                 <div class="flex gap-2 items-end mb-3">
                     <div class="flex-grow">
                         <label class="text-[10px] text-gray-500 uppercase tracking-wider block mb-1">Log New Lap (Sec)</label>
-                        <input type="number" step="0.001" id="time-${racer.id}" placeholder="e.g. 82.15" 
+                        <input type="number" step="0.001" id="time-${racer.id}" placeholder="82.1" 
                             class="w-full bg-black border border-gray-600 rounded p-2 text-white text-sm font-mono focus:border-[var(--neon-green)] outline-none">
                     </div>
-                    <!-- Added ID to button to help with finding it, though we navigate by DOM -->
                     <button onclick="window.addLap('${racer.id}')" class="bg-gray-700 hover:bg-[var(--neon-green)] hover:text-black text-white px-4 py-2 rounded text-sm font-bold transition h-[38px] flex items-center">
                         <i class="fa-solid fa-plus"></i>
                     </button>
@@ -272,7 +330,6 @@ window.openDriverDetails = (racerId) => {
     currentEditingRacerId = racerId;
     renderDriverDetail(racerId);
     
-    // Switch Views
     els.manageView.classList.add('hidden');
     els.driverDetailView.classList.remove('hidden');
     window.scrollTo(0,0);
@@ -288,31 +345,28 @@ function renderDriverDetail(racerId) {
     const racer = racersData.find(r => r.id === racerId);
     if (!racer) { window.closeDriverDetails(); return; }
 
-    // Populate Edit Form
     els.editId.value = racer.id;
     els.editName.value = racer.name;
     els.editNumber.value = racer.number;
     els.detailTotalLaps.innerText = `${racer.laps ? racer.laps.length : 0} Total Laps`;
 
-    // Populate Lap Table
     els.detailLapList.innerHTML = '';
     const laps = racer.laps || [];
     
     if (laps.length === 0) {
         els.detailLapList.innerHTML = '<tr><td colspan="3" class="p-4 text-center text-gray-600 text-sm">No laps recorded yet.</td></tr>';
     } else {
-        // Reverse to show latest first, but keep track of original index
         laps.map((time, index) => ({ time, index })).reverse().forEach(item => {
             const isBest = item.time === racer.bestLap;
             const tr = document.createElement('tr');
             tr.className = "hover:bg-white/5 border-b border-gray-800 last:border-0";
             tr.innerHTML = `
-                <td class="p-3 text-gray-500 font-mono text-sm">${item.index + 1}</td>
-                <td class="p-3 font-mono ${isBest ? 'text-[var(--neon-green)] font-bold' : 'text-gray-300'}">
+                <td class="p-3 text-gray-500 font-mono text-xs md:text-sm">${item.index + 1}</td>
+                <td class="p-3 font-mono ${isBest ? 'text-[var(--neon-green)] font-bold' : 'text-gray-300'} text-xs md:text-sm">
                     ${formatTime(item.time)} ${isBest ? '<i class="fa-solid fa-star text-[10px] ml-1"></i>' : ''}
                 </td>
                 <td class="p-3 text-right">
-                    <button onclick="window.deleteLap('${racerId}', ${item.index}')" class="text-red-500 hover:text-white bg-red-900/20 hover:bg-red-600 p-1.5 rounded transition text-xs">
+                    <button onclick="window.deleteLap('${racerId}', ${item.index})" class="text-red-500 hover:text-white bg-red-900/20 hover:bg-red-600 p-1.5 rounded transition text-xs">
                         <i class="fa-solid fa-trash"></i>
                     </button>
                 </td>
@@ -322,7 +376,6 @@ function renderDriverDetail(racerId) {
     }
 }
 
-// UPDATE: Transaction + Debounce on Save
 document.getElementById('editDriverForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     if (!currentEditingRacerId) return;
@@ -346,15 +399,14 @@ document.getElementById('editDriverForm').addEventListener('submit', async (e) =
 });
 
 window.deleteCurrentDriver = async () => {
-        if (!currentEditingRacerId || !confirm("Permanently delete this driver and all history?")) return;
-        try {
+    if (!currentEditingRacerId || !confirm("Permanently delete this driver and all history?")) return;
+    try {
         await deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'racers', currentEditingRacerId));
         showToast("Deleted", "Driver removed");
         window.closeDriverDetails();
     } catch (err) { showToast("Error", "Delete failed", true); }
 };
 
-// UPDATE: Use Transaction for Delete Lap
 window.deleteLap = async (racerId, lapIndex) => {
     if (!confirm(`Delete Lap ${lapIndex + 1}?`)) return;
 
@@ -370,16 +422,10 @@ window.deleteLap = async (racerId, lapIndex) => {
 
             if (lapIndex >= 0 && lapIndex < laps.length) {
                 laps.splice(lapIndex, 1);
-                
-                // Recalculate Stats
                 const newBest = laps.length > 0 ? Math.min(...laps) : null;
                 const lastLap = laps.length > 0 ? laps[laps.length - 1] : null;
 
-                transaction.update(racerRef, {
-                    laps: laps,
-                    bestLap: newBest,
-                    lastLap: lastLap
-                });
+                transaction.update(racerRef, { laps: laps, bestLap: newBest, lastLap: lastLap });
             } else {
                  throw "Invalid lap index";
             }
@@ -391,104 +437,52 @@ window.deleteLap = async (racerId, lapIndex) => {
     }
 };
 
-
-// --- Existing Admin Actions ---
-
-document.getElementById('raceConfigForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    if (!isAdmin) return;
-    
-    const btn = e.target.querySelector('button[type="submit"]');
-    toggleButtonLoading(btn, true);
-
-    const name = els.configName.value;
-    const laps = parseInt(els.configLaps.value);
-    
-    try {
-        await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'config', 'main'), { name, totalLaps: laps }, { merge: true });
-        showToast("Success", "Race settings updated");
-    } catch (err) { 
-        showToast("Error", "Failed to update settings", true); 
-    } finally {
-        toggleButtonLoading(btn, false);
-    }
-});
-
-document.getElementById('addRacerForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    if (!isAdmin) return;
-
-    const name = document.getElementById('racerName').value;
-    const number = document.getElementById('carNumber').value;
-    const btn = e.target.querySelector('button[type="submit"]');
-
-    if(!name || !number) return;
-    
-    toggleButtonLoading(btn, true);
+// --- NEW FUNCTIONALITY: Archive Race ---
+window.archiveRace = async () => {
+    if(!isAdmin) return;
+    if(!confirm("⚠️ End Current Race?\n\nThis will:\n1. Save results to History\n2. DELETE all current drivers\n3. Reset the track")) return;
 
     try {
-        await addDoc(collection(db, 'artifacts', APP_ID, 'public', 'data', 'racers'), {
-            name, number, bestLap: null, laps: [], status: 'racing', createdAt: Date.now()
+        // 1. Prepare History Object
+        const podium = racersData.slice(0, 3).map(r => ({ name: r.name, number: r.number, best: r.bestLap }));
+        const historyData = {
+            raceName: raceConfig.name,
+            totalLaps: raceConfig.totalLaps,
+            totalDrivers: racersData.length,
+            date: Date.now(),
+            podium: podium,
+            // Optional: Store full results if needed later
+            // results: racersData 
+        };
+
+        // 2. Add to History Collection
+        await addDoc(collection(db, 'artifacts', APP_ID, 'public', 'data', 'history'), historyData);
+
+        // 3. Delete All Racers (Batch)
+        const batch = writeBatch(db);
+        racersData.forEach(r => {
+            const ref = doc(db, 'artifacts', APP_ID, 'public', 'data', 'racers', r.id);
+            batch.delete(ref);
         });
-        document.getElementById('addRacerForm').reset();
-        showToast("Success", `Driver ${name} added`);
-    } catch (err) { 
-        showToast("Error", "Could not add driver", true); 
-    } finally {
-        toggleButtonLoading(btn, false);
-    }
-});
+        await batch.commit();
 
-// UPDATE: Transaction + Debounce for Add Lap
-window.addLap = async (id) => {
-    if (!isAdmin) return;
-    const input = document.getElementById(`time-${id}`);
-    // Button is next to the parent div of the input in our HTML structure
-    // structure: div(flex) -> div(flex-grow) -> input, button(sibling of div)
-    const btn = input.parentElement.nextElementSibling; 
-
-    const seconds = parseFloat(input.value);
-    if (isNaN(seconds) || seconds <= 0) { showToast("Invalid Time", "Please enter valid seconds", true); return; }
-    
-    toggleButtonLoading(btn, true);
-
-    const ms = Math.floor(seconds * 1000);
-    const racerRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'racers', id);
-
-    try {
-        await runTransaction(db, async (transaction) => {
-            const racerDoc = await transaction.get(racerRef);
-            if (!racerDoc.exists()) throw "Racer does not exist!";
-            
-            const data = racerDoc.data();
-            const newLaps = [...(data.laps || []), ms];
-            const newBest = Math.min(...newLaps);
-
-            transaction.update(racerRef, { 
-                laps: newLaps, 
-                bestLap: newBest, 
-                lastLap: ms 
-            });
-        });
+        showToast("Race Archived", "Track is now clear");
         
-        input.value = '';
-        showToast("Lap Logged", `#${id} - ${formatTime(ms)}`);
-    } catch (err) { 
-        console.error(err); 
-        showToast("Error", "Update failed", true); 
-    } finally {
-        toggleButtonLoading(btn, false);
+    } catch(e) {
+        console.error(e);
+        showToast("Error", "Archive failed", true);
     }
 };
 
-// --- UI Utils ---
-window.switchView = (view) => {
-    // Reset Detail View if leaving
-    if (currentEditingRacerId) window.closeDriverDetails();
+// --- View Logic ---
 
+window.switchView = (view) => {
+    if (currentEditingRacerId) window.closeDriverDetails();
     if (view === 'manage') {
         els.liveView.classList.add('hidden');
+        els.historyView.classList.add('hidden');
         els.manageView.classList.remove('hidden');
+        // Admin overrides public tabs visually
         if(raceConfig) {
             els.configName.value = raceConfig.name || "";
             els.configLaps.value = raceConfig.totalLaps || "";
@@ -496,7 +490,30 @@ window.switchView = (view) => {
         renderAdminList();
     } else {
         els.manageView.classList.add('hidden');
+        // Default to live view when exiting admin
+        switchPublicView('live'); 
+    }
+};
+
+window.switchPublicView = (view) => {
+    // If Admin mode is active, turn it off visually or handle it? 
+    // Simplified: Public tabs switch between Live and History
+    els.manageView.classList.add('hidden');
+    
+    if (view === 'history') {
+        els.liveView.classList.add('hidden');
+        els.historyView.classList.remove('hidden');
+        
+        // Tab Styles
+        els.tabLive.className = "flex-1 md:flex-none px-6 py-2 rounded-md text-sm font-bold text-gray-400 hover:text-white transition";
+        els.tabHistory.className = "flex-1 md:flex-none px-6 py-2 rounded-md text-sm font-bold bg-[var(--neon-green)] text-black shadow-lg transition";
+    } else {
+        els.historyView.classList.add('hidden');
         els.liveView.classList.remove('hidden');
+        
+        // Tab Styles
+        els.tabHistory.className = "flex-1 md:flex-none px-6 py-2 rounded-md text-sm font-bold text-gray-400 hover:text-white transition";
+        els.tabLive.className = "flex-1 md:flex-none px-6 py-2 rounded-md text-sm font-bold bg-[var(--neon-green)] text-black shadow-lg transition";
     }
 };
 
@@ -518,7 +535,6 @@ document.getElementById('authBtn').addEventListener('click', () => {
     }
 });
 
-// UPDATE: Security Check for PIN against DB
 document.getElementById('pinForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const pinInput = document.getElementById('pinInput');
@@ -528,11 +544,10 @@ document.getElementById('pinForm').addEventListener('submit', async (e) => {
     toggleButtonLoading(submitBtn, true);
 
     try {
-        // 1. Check if specific admin config exists
         const configRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'config', 'admin');
         const snap = await getDoc(configRef);
         
-        let validPin = "1234"; // Fallback default
+        let validPin = "1234";
         if (snap.exists() && snap.data().pin) {
             validPin = snap.data().pin;
         }
@@ -550,7 +565,6 @@ document.getElementById('pinForm').addEventListener('submit', async (e) => {
         }
     } catch (error) {
         console.error("PIN Check Error", error);
-        // Fallback for connectivity issues
         if (pin === "1234") {
              showToast("Warning", "Using offline fallback PIN", true);
              isAdmin = true;
@@ -564,14 +578,72 @@ document.getElementById('pinForm').addEventListener('submit', async (e) => {
     }
 });
 
+// Existing Actions
+document.getElementById('raceConfigForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!isAdmin) return;
+    const btn = e.target.querySelector('button[type="submit"]');
+    toggleButtonLoading(btn, true);
+    const name = els.configName.value;
+    const laps = parseInt(els.configLaps.value);
+    try {
+        await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'config', 'main'), { name, totalLaps: laps }, { merge: true });
+        showToast("Success", "Race settings updated");
+    } catch (err) { showToast("Error", "Failed to update settings", true); } finally { toggleButtonLoading(btn, false); }
+});
+
+document.getElementById('addRacerForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!isAdmin) return;
+    const name = document.getElementById('racerName').value;
+    const number = document.getElementById('carNumber').value;
+    const btn = e.target.querySelector('button[type="submit"]');
+    if(!name || !number) return;
+    toggleButtonLoading(btn, true);
+    try {
+        await addDoc(collection(db, 'artifacts', APP_ID, 'public', 'data', 'racers'), {
+            name, number, bestLap: null, laps: [], status: 'racing', createdAt: Date.now()
+        });
+        document.getElementById('addRacerForm').reset();
+        showToast("Success", `Driver ${name} added`);
+    } catch (err) { showToast("Error", "Could not add driver", true); } finally { toggleButtonLoading(btn, false); }
+});
+
+window.addLap = async (id) => {
+    if (!isAdmin) return;
+    const input = document.getElementById(`time-${id}`);
+    const btn = input.parentElement.nextElementSibling; 
+    const seconds = parseFloat(input.value);
+    if (isNaN(seconds) || seconds <= 0) { showToast("Invalid Time", "Please enter valid seconds", true); return; }
+    toggleButtonLoading(btn, true);
+    const ms = Math.floor(seconds * 1000);
+    const racerRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'racers', id);
+    try {
+        await runTransaction(db, async (transaction) => {
+            const racerDoc = await transaction.get(racerRef);
+            if (!racerDoc.exists()) throw "Racer does not exist!";
+            const data = racerDoc.data();
+            const newLaps = [...(data.laps || []), ms];
+            const newBest = Math.min(...newLaps);
+            transaction.update(racerRef, { laps: newLaps, bestLap: newBest, lastLap: ms });
+        });
+        input.value = '';
+        showToast("Lap Logged", `#${id} - ${formatTime(ms)}`);
+    } catch (err) { console.error(err); showToast("Error", "Update failed", true); } finally { toggleButtonLoading(btn, false); }
+};
+
 function showToast(title, msg, isError = false) {
     const t = els.toast;
     document.getElementById('toastTitle').innerText = title;
     document.getElementById('toastMsg').innerText = msg;
-    t.className = `fixed bottom-6 right-6 px-6 py-4 rounded-r-lg border-l-4 shadow-2xl transform transition-all duration-300 z-50 flex items-center gap-3 max-w-xs ${isError ? 'bg-gray-800 text-white border-red-500' : 'bg-gray-800 text-white border-[var(--neon-green)]'}`;
+    t.className = `fixed bottom-6 right-6 left-6 md:left-auto px-6 py-4 rounded-r-lg border-l-4 shadow-2xl transform transition-all duration-300 z-50 flex items-center gap-3 md:max-w-xs ${isError ? 'bg-gray-800 text-white border-red-500' : 'bg-gray-800 text-white border-[var(--neon-green)]'}`;
     document.getElementById('toastIcon').innerHTML = isError ? '<i class="fa-solid fa-circle-xmark text-red-500"></i>' : '<i class="fa-solid fa-check-circle text-[var(--neon-green)]"></i>';
-    t.classList.remove('translate-x-full');
-    setTimeout(() => t.classList.add('translate-x-full'), 3000);
+    t.classList.remove('translate-y-full');
+    t.classList.remove('md:translate-x-full');
+    setTimeout(() => {
+        t.classList.add('translate-y-full');
+        t.classList.add('md:translate-x-full');
+    }, 3000);
 }
 
 init();
