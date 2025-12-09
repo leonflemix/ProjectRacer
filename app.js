@@ -87,10 +87,22 @@ function setupListeners() {
         const racers = [];
         snapshot.forEach(doc => racers.push({ id: doc.id, ...doc.data() }));
         
+        // SORT LOGIC UPDATE: Sort by Laps (Desc) then Total Time (Asc)
         racersData = racers.sort((a, b) => {
-            if (!a.bestLap) return 1;
-            if (!b.bestLap) return -1;
-            return a.bestLap - b.bestLap;
+            const lapsA = a.laps ? a.laps.length : 0;
+            const lapsB = b.laps ? b.laps.length : 0;
+
+            // 1. Most laps is better
+            if (lapsA !== lapsB) return lapsB - lapsA;
+
+            // 2. If laps equal, least total time is better
+            const timeA = calculateTotalTime(a.laps);
+            const timeB = calculateTotalTime(b.laps);
+            
+            // Handle 0 laps case (sort doesn't matter much, but keep consistent)
+            if (lapsA === 0) return 0;
+            
+            return timeA - timeB;
         });
 
         renderLiveView();
@@ -145,7 +157,11 @@ function updateRaceHeader() {
 
 function renderLiveView() {
     els.leaderboardBody.innerHTML = '';
-    const bestTime = racersData[0]?.bestLap || 0;
+    
+    // Leader Calculation based on new sort (Index 0 is leader)
+    const leader = racersData[0];
+    const leaderLaps = leader?.laps?.length || 0;
+    const leaderTime = calculateTotalTime(leader?.laps);
 
     if(racersData.length === 0) {
         els.leaderboardBody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-gray-500 font-mono text-xs">WAITING FOR ENTRIES</td></tr>`;
@@ -155,17 +171,29 @@ function renderLiveView() {
         const tr = document.createElement('tr');
         tr.className = "hover:bg-white/5 transition group border-b border-gray-800/50 last:border-0";
         
+        const rLaps = racer.laps ? racer.laps.length : 0;
+        const rTime = calculateTotalTime(racer.laps);
+        const hasRaced = rLaps > 0;
+
+        // Gap Calculation (Based on Time or Laps)
         let gap = `<span class="text-gray-600">-</span>`;
-        if (index > 0 && racer.bestLap && bestTime) {
-            gap = `<span class="text-[var(--neon-red)] font-mono text-[10px] md:text-xs">+${((racer.bestLap - bestTime) / 1000).toFixed(2)}s</span>`;
+        if (index > 0 && leaderLaps > 0 && hasRaced) {
+            if (rLaps < leaderLaps) {
+                // Gap in Laps
+                const lapDiff = leaderLaps - rLaps;
+                gap = `<span class="text-[var(--neon-red)] font-mono text-[10px] md:text-xs">+${lapDiff} Lap${lapDiff > 1 ? 's' : ''}</span>`;
+            } else {
+                // Gap in Time (Same lap count)
+                const timeDiff = (rTime - leaderTime) / 1000;
+                gap = `<span class="text-[var(--neon-red)] font-mono text-[10px] md:text-xs">+${timeDiff.toFixed(2)}s</span>`;
+            }
         }
 
         let rank = `<span class="font-mono text-gray-500 text-xs md:text-sm">P${index + 1}</span>`;
-        if (index === 0 && racer.bestLap) rank = `<span class="bg-[var(--neon-green)] text-black font-bold px-2 rounded text-[10px] md:text-xs">P1</span>`;
+        if (index === 0 && hasRaced) rank = `<span class="bg-[var(--neon-green)] text-black font-bold px-2 rounded text-[10px] md:text-xs">P1</span>`;
         
-        const lapCount = racer.laps ? racer.laps.length : 0;
         const maxLaps = raceConfig.totalLaps || 0;
-        const lapDisplay = maxLaps > 0 ? `${lapCount}<span class="text-gray-600">/${maxLaps}</span>` : lapCount;
+        const lapDisplay = maxLaps > 0 ? `${rLaps}<span class="text-gray-600">/${maxLaps}</span>` : rLaps;
 
         tr.innerHTML = `
             <td class="p-3 md:p-4 text-center">${rank}</td>
@@ -179,7 +207,8 @@ function renderLiveView() {
     });
 
     els.podiumContainer.innerHTML = '';
-    const winners = racersData.filter(r => r.bestLap).slice(0, 3);
+    // Winners logic: Top 3 from sorted list who have actually raced
+    const winners = racersData.filter(r => r.laps && r.laps.length > 0).slice(0, 3);
     
     if (winners.length === 0) {
         els.podiumContainer.innerHTML = `<div class="text-gray-600 font-mono text-sm">NO DATA AVAILABLE</div>`;
@@ -191,6 +220,9 @@ function renderLiveView() {
         if (winners[placeIndex]) {
             const racer = winners[placeIndex];
             const realRank = placeIndex + 1;
+            // Calculate total time for display on podium if needed, or stick to best lap?
+            // User asked for calculation by total time, but display can remain best lap or show total.
+            // Keeping display as Best Lap for "highlight", but rank is determined by total.
             
             let styles = {
                 1: { h: 'h-32 md:h-56', bg: 'bg-[var(--neon-green)]', order: 'order-2', scale: 'scale-110 z-10', text: 'text-black' },
@@ -230,7 +262,6 @@ function renderHistoryList(historyData) {
 
     historyData.forEach(race => {
         const date = new Date(race.date).toLocaleDateString();
-        const winner = race.podium && race.podium[0] ? race.podium[0] : { name: 'N/A', best: 0 };
         
         const card = document.createElement('div');
         card.className = "glass-panel p-4 rounded-xl border border-gray-800 hover:border-gray-600 transition flex flex-col gap-3";
@@ -444,7 +475,15 @@ window.archiveRace = async () => {
 
     try {
         // 1. Prepare History Object
-        const podium = racersData.slice(0, 3).map(r => ({ name: r.name, number: r.number, best: r.bestLap }));
+        // MODIFIED: Include Total Laps and Total Time in archive
+        const podium = racersData.slice(0, 3).map(r => ({ 
+            name: r.name, 
+            number: r.number, 
+            best: r.bestLap,
+            laps: r.laps ? r.laps.length : 0,
+            totalTime: calculateTotalTime(r.laps)
+        }));
+
         const historyData = {
             raceName: raceConfig.name,
             totalLaps: raceConfig.totalLaps,
