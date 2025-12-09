@@ -167,6 +167,12 @@ function renderLiveView() {
         els.leaderboardBody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-gray-500 font-mono text-xs">WAITING FOR ENTRIES</td></tr>`;
     }
 
+    // Try to update the static HTML header if possible to match new data (Optional UX improvement)
+    const tableHeader = document.querySelector('#leaderboardBody').parentElement.querySelector('thead tr th:nth-child(5)');
+    if(tableHeader && tableHeader.innerText === "Best Lap") {
+        tableHeader.innerText = "Total Time";
+    }
+
     racersData.forEach((racer, index) => {
         const tr = document.createElement('tr');
         tr.className = "hover:bg-white/5 transition group border-b border-gray-800/50 last:border-0";
@@ -195,13 +201,13 @@ function renderLiveView() {
         const maxLaps = raceConfig.totalLaps || 0;
         const lapDisplay = maxLaps > 0 ? `${rLaps}<span class="text-gray-600">/${maxLaps}</span>` : rLaps;
 
-        // We show BEST LAP in the table as requested, even though rank is based on Total Time
+        // DISPLAY UPDATE: Show Total Time instead of Best Lap
         tr.innerHTML = `
             <td class="p-3 md:p-4 text-center">${rank}</td>
             <td class="p-3 md:p-4 font-mono text-gray-400 group-hover:text-white transition text-xs md:text-sm">#${racer.number}</td>
             <td class="p-3 md:p-4 font-bold text-gray-200 group-hover:text-white text-sm md:text-base">${racer.name}</td>
             <td class="p-3 md:p-4 text-center font-mono text-gray-400 text-xs hidden md:table-cell">${lapDisplay}</td>
-            <td class="p-3 md:p-4 text-right font-mono text-[var(--neon-blue)] text-sm md:text-base">${formatTime(racer.bestLap)}</td>
+            <td class="p-3 md:p-4 text-right font-mono text-[var(--neon-blue)] text-sm md:text-base">${formatTime(rTime)}</td>
             <td class="p-3 md:p-4 text-right hidden md:table-cell">${gap}</td>
         `;
         els.leaderboardBody.appendChild(tr);
@@ -221,6 +227,7 @@ function renderLiveView() {
         if (winners[placeIndex]) {
             const racer = winners[placeIndex];
             const realRank = placeIndex + 1;
+            const rTime = calculateTotalTime(racer.laps);
             
             let styles = {
                 1: { h: 'h-32 md:h-56', bg: 'bg-[var(--neon-green)]', order: 'order-2', scale: 'scale-110 z-10', text: 'text-black' },
@@ -231,11 +238,12 @@ function renderLiveView() {
             const bar = document.createElement('div');
             bar.className = `${styles.order} flex flex-col items-center justify-end w-1/3 max-w-[120px] podium-bar ${styles.scale}`;
             
+            // DISPLAY UPDATE: Show Total Time in Podium
             bar.innerHTML = `
                 <div class="mb-3 text-center w-full">
                     <div class="text-[10px] text-gray-400 font-mono mb-1">#${racer.number}</div>
                     <div class="font-bold truncate w-full px-1 text-xs md:text-sm text-gray-200">${racer.name}</div>
-                    <div class="font-mono text-[10px] text-[var(--neon-green)]">${formatTime(racer.bestLap)}</div>
+                    <div class="font-mono text-[10px] text-[var(--neon-green)]">${formatTime(rTime)}</div>
                 </div>
                 <div class="w-full ${styles.h} ${styles.bg} rounded-t-lg shadow-[0_0_20px_rgba(0,0,0,0.5)] relative flex items-start justify-center pt-2 border-x border-t border-white/20">
                     <span class="${styles.text} font-black text-xl md:text-2xl opacity-40">${realRank}</span>
@@ -248,7 +256,7 @@ function renderLiveView() {
     document.getElementById('lastUpdated').innerText = `UPDATED: ${new Date().toLocaleTimeString()}`;
 }
 
-// History Render (Same as before)
+// History Render
 function renderHistoryList(historyData) {
     els.historyCount.innerText = `${historyData.length} Races Archived`;
     els.historyList.innerHTML = '';
@@ -265,10 +273,11 @@ function renderHistoryList(historyData) {
         
         let podiumHtml = '';
         if (race.podium) {
+            // DISPLAY UPDATE: Show Total Time in History
             podiumHtml = race.podium.map((p, i) => `
                 <div class="flex justify-between items-center text-xs font-mono border-b border-gray-800 pb-1 last:border-0">
                     <span class="${i===0 ? 'text-[var(--neon-green)] font-bold' : 'text-gray-400'}">P${i+1} ${p.name}</span>
-                    <span class="text-gray-500">${formatTime(p.best)}</span>
+                    <span class="text-gray-500">${formatTime(p.totalTime || p.best)}</span>
                 </div>
             `).join('');
         }
